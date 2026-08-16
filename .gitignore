@@ -1,0 +1,6 @@
+.env
+.env.production.example
+venv/
+IMPORT_RECONCILIATION_REPORT_2026-08-14.md
+REACT_APACHE_DEPLOYMENT.md
+apache/
