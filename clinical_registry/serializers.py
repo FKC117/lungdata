@@ -15,6 +15,7 @@ from clinical_registry.models import (
     IHCDetail,
     Immunohistochemistry,
     MolecularPathology,
+    PastTreatmentHistory,
     Patient,
     PatientHistory,
     PathologicalStaging,
@@ -28,6 +29,19 @@ from clinical_registry.models import (
     TreatmentCycle,
     TuberculosisHistory,
 )
+
+
+def user_can_edit_owned_record(user, owner):
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser or user.is_staff:
+        return True
+    return owner_id_matches(user.id, owner)
+
+
+def owner_id_matches(user_id, owner):
+    owner_id = getattr(owner, "id", owner)
+    return bool(user_id and owner_id and user_id == owner_id)
 
 
 class SmokingHistorySerializer(serializers.ModelSerializer):
@@ -219,7 +233,15 @@ class TreatmentCycleSerializer(serializers.ModelSerializer):
         )
 
 
+class PastTreatmentHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PastTreatmentHistory
+        fields = ("id", "detail", "date")
+
+
 class ClinicalObservationSummarySerializer(serializers.ModelSerializer):
+    can_edit = serializers.SerializerMethodField()
+
     class Meta:
         model = ClinicalObservation
         fields = (
@@ -236,7 +258,13 @@ class ClinicalObservationSummarySerializer(serializers.ModelSerializer):
             "diagnosis_laterality",
             "grade",
             "is_draft",
+            "can_edit",
         )
+
+    def get_can_edit(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        return user_can_edit_owned_record(user, obj.created_by)
 
 
 class ClinicalObservationDetailSerializer(ClinicalObservationSummarySerializer):
@@ -252,6 +280,7 @@ class ClinicalObservationDetailSerializer(ClinicalObservationSummarySerializer):
     pathological_staging_details = PathologicalStagingDetailSerializer(many=True, read_only=True)
     ihc_panels = ImmunohistochemistrySerializer(many=True, read_only=True)
     treatment_cycles = TreatmentCycleSerializer(many=True, read_only=True)
+    past_treatment_histories = PastTreatmentHistorySerializer(many=True, read_only=True)
     radiotherapy_schedules = RadiotherapyScheduleSerializer(many=True, read_only=True)
     surgeries = SurgerySerializer(many=True, read_only=True)
 
@@ -269,6 +298,7 @@ class ClinicalObservationDetailSerializer(ClinicalObservationSummarySerializer):
             "pathological_staging_details",
             "ihc_panels",
             "treatment_cycles",
+            "past_treatment_histories",
             "radiotherapy_schedules",
             "surgeries",
         )
@@ -277,6 +307,7 @@ class ClinicalObservationDetailSerializer(ClinicalObservationSummarySerializer):
 class PatientListSerializer(serializers.ModelSerializer):
     latest_observation = serializers.SerializerMethodField()
     observation_count = serializers.IntegerField(read_only=True)
+    can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = Patient
@@ -294,6 +325,7 @@ class PatientListSerializer(serializers.ModelSerializer):
             "socio_economic_status",
             "observation_count",
             "latest_observation",
+            "can_edit",
         )
 
     def get_latest_observation(self, obj):
@@ -302,11 +334,20 @@ class PatientListSerializer(serializers.ModelSerializer):
             observation = obj.observations.order_by("-observed_at", "-id").first()
         if observation is None:
             return None
-        return ClinicalObservationSummarySerializer(observation).data
+        return ClinicalObservationSummarySerializer(
+            observation,
+            context=self.context,
+        ).data
+
+    def get_can_edit(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        return user_can_edit_owned_record(user, obj.created_by)
 
 
 class PatientDetailSerializer(serializers.ModelSerializer):
     observations = ClinicalObservationDetailSerializer(many=True, read_only=True)
+    can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = Patient
@@ -331,8 +372,14 @@ class PatientDetailSerializer(serializers.ModelSerializer):
             "passport",
             "patient_type",
             "is_draft",
+            "can_edit",
             "observations",
         )
+
+    def get_can_edit(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        return user_can_edit_owned_record(user, obj.created_by)
 
 
 class PatientEntryHistorySerializer(serializers.Serializer):
@@ -462,6 +509,7 @@ class PastTreatmentHistoryWriteSerializer(serializers.Serializer):
 
 
 class PatientEntrySerializer(serializers.Serializer):
+    observation_id = serializers.IntegerField(required=False, allow_null=True)
     registry_id = serializers.CharField(required=False, allow_blank=True)
     legacy_unique_id = serializers.CharField(required=False, allow_blank=True)
     registration_no = serializers.CharField(required=False, allow_blank=True)
@@ -515,6 +563,11 @@ class PatientEntrySerializer(serializers.Serializer):
     def _clean_string_list(self, values):
         return [value.strip() for value in values if value and value.strip()]
 
+    def _has_meaningful_data(self, payload):
+        if not payload:
+            return False
+        return any(value not in ("", None, [], {}) for value in payload.values())
+
     def _calculate_age(self, date_of_birth, reference_date):
         years = reference_date.year - date_of_birth.year
         if (reference_date.month, reference_date.day) < (date_of_birth.month, date_of_birth.day):
@@ -545,6 +598,8 @@ class PatientEntrySerializer(serializers.Serializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        request = self.context.get("request")
+        owner = getattr(request, "user", None) if request and getattr(request, "user", None) and request.user.is_authenticated else None
         history_data = validated_data.pop("history", None)
         smoking_histories = validated_data.pop("smoking_histories", [])
         tb_histories = validated_data.pop("tb_histories", [])
@@ -583,6 +638,7 @@ class PatientEntrySerializer(serializers.Serializer):
             passport=validated_data.pop("passport", ""),
             patient_type=validated_data.pop("patient_type", ""),
             is_draft=validated_data.pop("patient_is_draft", False),
+            created_by=owner,
         )
         if not patient.registry_id:
             patient.registry_id = f"REG-{patient.pk:09d}"
@@ -602,6 +658,7 @@ class PatientEntrySerializer(serializers.Serializer):
             grade=validated_data.pop("grade", ""),
             laterality_notes=validated_data.pop("laterality_notes", ""),
             is_draft=validated_data.pop("observation_is_draft", False),
+            created_by=owner,
         )
 
         patient_history = None
@@ -672,3 +729,265 @@ class PatientEntrySerializer(serializers.Serializer):
                 SurgicalLaterality.objects.create(surgery=surgery, value=value)
 
         return patient
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        request = self.context.get("request")
+        owner = (
+            getattr(request, "user", None)
+            if request and getattr(request, "user", None) and request.user.is_authenticated
+            else None
+        )
+        observation_id = validated_data.pop("observation_id", None)
+        history_data = validated_data.pop("history", None) if "history" in validated_data else None
+        smoking_histories = validated_data.pop("smoking_histories", None)
+        tb_histories = validated_data.pop("tb_histories", None)
+        covid_histories = validated_data.pop("covid_histories", None)
+        diagnoses = validated_data.pop("diagnoses", None)
+        metastatic_sites = validated_data.pop("metastatic_sites", None)
+        comorbidities = validated_data.pop("comorbidities", None)
+        histopathologies = validated_data.pop("histopathologies", None)
+        molecular_pathologies = validated_data.pop("molecular_pathologies", None)
+        cancer_markers = validated_data.pop("cancer_markers", None)
+        clinical_staging = validated_data.pop("clinical_staging", None) if "clinical_staging" in validated_data else None
+        pathological_staging = (
+            validated_data.pop("pathological_staging", None) if "pathological_staging" in validated_data else None
+        )
+        pathological_staging_detail = (
+            validated_data.pop("pathological_staging_detail", None)
+            if "pathological_staging_detail" in validated_data
+            else None
+        )
+        ihc_panels = validated_data.pop("ihc_panels", None)
+        treatment_cycles = validated_data.pop("treatment_cycles", None)
+        past_treatment_histories = validated_data.pop("past_treatment_histories", None)
+        radiotherapy_schedules = validated_data.pop("radiotherapy_schedules", None)
+        surgeries = validated_data.pop("surgeries", None)
+
+        patient_field_map = (
+            "registry_id",
+            "legacy_unique_id",
+            "registration_no",
+            "name",
+            "phone",
+            "email",
+            "nid",
+            "date_of_birth",
+            "age",
+            "gender",
+            "blood_group",
+            "area",
+            "police_station",
+            "district",
+            "socio_economic_status",
+            "passport",
+            "patient_type",
+            "patient_is_draft",
+        )
+        for field in patient_field_map:
+            if field not in self.initial_data:
+                continue
+            target_field = "is_draft" if field == "patient_is_draft" else field
+            value = validated_data.get(field)
+            if field == "registry_id":
+                value = (value or "").strip() or None
+            setattr(instance, target_field, value)
+        instance.save()
+
+        observation_input_fields = {
+            "observed_at",
+            "consulting_doctor_name",
+            "center_name",
+            "cancer_type",
+            "diagnosis_disease_group",
+            "diagnosis_subgroup",
+            "diagnosis_primary_site",
+            "diagnosis_laterality",
+            "grade",
+            "laterality_notes",
+            "observation_is_draft",
+        }
+        nested_payload_present = any(
+            key in self.initial_data
+            for key in (
+                "history",
+                "smoking_histories",
+                "tb_histories",
+                "covid_histories",
+                "diagnoses",
+                "metastatic_sites",
+                "comorbidities",
+                "histopathologies",
+                "molecular_pathologies",
+                "cancer_markers",
+                "clinical_staging",
+                "pathological_staging",
+                "pathological_staging_detail",
+                "ihc_panels",
+                "treatment_cycles",
+                "past_treatment_histories",
+                "radiotherapy_schedules",
+                "surgeries",
+            )
+        )
+        observation_payload_present = any(field in self.initial_data for field in observation_input_fields)
+
+        observation = None
+        if observation_id is not None:
+            observation = instance.observations.get(pk=observation_id)
+        elif observation_payload_present or nested_payload_present:
+            observation = instance.observations.order_by("-observed_at", "-id").first()
+
+        if observation is None and (observation_payload_present or nested_payload_present):
+            observation = ClinicalObservation.objects.create(
+                patient=instance,
+                registration_no=instance.registration_no,
+                created_by=owner or instance.created_by,
+            )
+
+        if observation is not None:
+            if "registration_no" in self.initial_data:
+                observation.registration_no = instance.registration_no
+            for field in observation_input_fields:
+                if field not in self.initial_data:
+                    continue
+                target_field = "is_draft" if field == "observation_is_draft" else field
+                setattr(observation, target_field, validated_data.get(field))
+            if not observation.created_by:
+                observation.created_by = owner or instance.created_by
+            observation.save()
+
+        patient_history = observation.history if observation and hasattr(observation, "history") else None
+        history_lists_present = any(
+            key in self.initial_data for key in ("smoking_histories", "tb_histories", "covid_histories")
+        )
+        if observation is not None and (
+            "history" in self.initial_data or history_lists_present
+        ):
+            if patient_history is None:
+                patient_history = PatientHistory.objects.create(observation=observation)
+            if "history" in self.initial_data:
+                if history_data:
+                    for field, value in history_data.items():
+                        setattr(patient_history, field, value)
+                else:
+                    for field in (
+                        "marital_status",
+                        "dietary_habit",
+                        "height_cm",
+                        "weight_kg",
+                        "bmi",
+                        "alcohol_history",
+                        "radiotherapy_to_chest",
+                        "family_cancer_history",
+                        "known_mutation",
+                        "first_diagnosis_date",
+                    ):
+                        setattr(patient_history, field, "" if field not in {"height_cm", "weight_kg", "bmi", "first_diagnosis_date"} else None)
+                patient_history.save()
+
+            if smoking_histories is not None:
+                patient_history.smoking_histories.all().delete()
+                for smoking_history in smoking_histories:
+                    if self._has_meaningful_data(smoking_history):
+                        SmokingHistory.objects.create(patient_history=patient_history, **smoking_history)
+            if tb_histories is not None:
+                patient_history.tb_histories.all().delete()
+                for tb_history in tb_histories:
+                    if self._has_meaningful_data(tb_history):
+                        TuberculosisHistory.objects.create(patient_history=patient_history, **tb_history)
+            if covid_histories is not None:
+                patient_history.covid_histories.all().delete()
+                for covid_history in covid_histories:
+                    if self._has_meaningful_data(covid_history):
+                        CovidHistory.objects.create(patient_history=patient_history, **covid_history)
+
+        if observation is not None:
+            if diagnoses is not None:
+                observation.diagnoses.all().delete()
+                for detail in self._clean_string_list(diagnoses):
+                    Diagnosis.objects.create(observation=observation, detail=detail)
+            if metastatic_sites is not None:
+                observation.metastatic_sites.all().delete()
+                for value in self._clean_string_list(metastatic_sites):
+                    DiagnosisMetastaticSite.objects.create(observation=observation, value=value)
+            if comorbidities is not None:
+                observation.comorbidities.all().delete()
+                for detail in self._clean_string_list(comorbidities):
+                    Comorbidity.objects.create(observation=observation, detail=detail)
+            if histopathologies is not None:
+                observation.histopathologies.all().delete()
+                for histopathology in histopathologies:
+                    if self._has_meaningful_data(histopathology):
+                        Histopathology.objects.create(observation=observation, **histopathology)
+            if molecular_pathologies is not None:
+                observation.molecular_pathologies.all().delete()
+                for molecular_pathology in molecular_pathologies:
+                    if self._has_meaningful_data(molecular_pathology):
+                        MolecularPathology.objects.create(observation=observation, **molecular_pathology)
+            if cancer_markers is not None:
+                observation.cancer_markers.all().delete()
+                for marker in cancer_markers:
+                    if self._has_meaningful_data(marker):
+                        CancerMarker.objects.create(observation=observation, **marker)
+            if "clinical_staging" in self.initial_data:
+                observation.clinical_stagings.all().delete()
+                if clinical_staging and self._has_meaningful_data(clinical_staging):
+                    ClinicalStaging.objects.create(observation=observation, **clinical_staging)
+            if "pathological_staging" in self.initial_data:
+                observation.pathological_stagings.all().delete()
+                if pathological_staging and self._has_meaningful_data(pathological_staging):
+                    PathologicalStaging.objects.create(observation=observation, **pathological_staging)
+            if "pathological_staging_detail" in self.initial_data:
+                observation.pathological_staging_details.all().delete()
+                if pathological_staging_detail and self._has_meaningful_data(pathological_staging_detail):
+                    PathologicalStagingDetail.objects.create(
+                        observation=observation,
+                        **pathological_staging_detail,
+                    )
+            if ihc_panels is not None:
+                observation.ihc_panels.all().delete()
+                for ihc_panel in ihc_panels:
+                    detail_rows = ihc_panel.pop("details", [])
+                    if self._has_meaningful_data(ihc_panel) or detail_rows:
+                        panel = Immunohistochemistry.objects.create(observation=observation, **ihc_panel)
+                        for detail_row in detail_rows:
+                            if self._has_meaningful_data(detail_row):
+                                IHCDetail.objects.create(ihc=panel, **detail_row)
+            if treatment_cycles is not None:
+                observation.treatment_cycles.all().delete()
+                for cycle in treatment_cycles:
+                    if self._has_meaningful_data(cycle):
+                        TreatmentCycle.objects.create(observation=observation, **cycle)
+            if past_treatment_histories is not None:
+                observation.past_treatment_histories.all().delete()
+                for past_treatment_history in past_treatment_histories:
+                    if self._has_meaningful_data(past_treatment_history):
+                        PastTreatmentHistory.objects.create(observation=observation, **past_treatment_history)
+            if radiotherapy_schedules is not None:
+                observation.radiotherapy_schedules.all().delete()
+                for schedule in radiotherapy_schedules:
+                    sites = self._clean_string_list(schedule.pop("sites", []))
+                    modalities = self._clean_string_list(schedule.pop("modalities", []))
+                    if self._has_meaningful_data(schedule) or sites or modalities:
+                        radiotherapy = RadiotherapySchedule.objects.create(observation=observation, **schedule)
+                        for value in sites:
+                            RadiotherapyScheduleSite.objects.create(
+                                radiotherapy_schedule=radiotherapy,
+                                value=value,
+                            )
+                        for value in modalities:
+                            RadiotherapyScheduleModality.objects.create(
+                                radiotherapy_schedule=radiotherapy,
+                                value=value,
+                            )
+            if surgeries is not None:
+                observation.surgeries.all().delete()
+                for surgery_data in surgeries:
+                    lateralities = self._clean_string_list(surgery_data.pop("lateralities", []))
+                    if self._has_meaningful_data(surgery_data) or lateralities:
+                        surgery = Surgery.objects.create(observation=observation, **surgery_data)
+                        for value in lateralities:
+                            SurgicalLaterality.objects.create(surgery=surgery, value=value)
+
+        return instance

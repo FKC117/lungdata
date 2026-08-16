@@ -71,11 +71,11 @@ export default function LoginPage() {
         <div className="auth-role-grid">
           <div className="auth-role-card">
             <span className="compare-summary-label">Admin</span>
-            <strong>System oversight, registry control, and Django admin access.</strong>
+            <strong>Registry oversight inside the React workspace, with optional Django admin access.</strong>
           </div>
           <div className="auth-role-card">
             <span className="compare-summary-label">Doctor</span>
-            <strong>Clinical registry search, review, and patient observation workflow.</strong>
+            <strong>Doctor-specific clinical search, review, and patient observation workflow.</strong>
           </div>
           <div className="auth-role-card">
             <span className="compare-summary-label">User</span>

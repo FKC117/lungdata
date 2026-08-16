@@ -76,13 +76,13 @@ function AppHeader({
           </NavLink>
           {role === 'admin' ? (
             <a className="topnav-link" href="/admin/">
-              Admin Console
+              Django Admin
             </a>
           ) : null}
         </nav>
         <div className="user-badge-cluster">
           <span className="data-pill">
-            {role === 'admin' ? 'Admin' : role === 'doctor' ? 'Doctor' : 'User'}
+            {role === 'admin' ? 'Registry Admin' : role === 'doctor' ? 'Doctor' : 'User'}
           </span>
           <span className="data-pill">{fullName}</span>
           <button
@@ -104,6 +104,7 @@ function ProtectedRoutes() {
     <Routes>
       <Route index element={<Navigate to="/patients" replace />} />
       <Route path="patients/new" element={<PatientEntryPage />} />
+      <Route path="patients/:registryId/edit" element={<PatientEntryPage />} />
       <Route path="patients" element={<PatientSearchPage />} />
       <Route path="patients/:registryId" element={<PatientDetailPage />} />
       <Route path="*" element={<Navigate to="/patients" replace />} />
@@ -122,8 +123,10 @@ function App() {
   })
   const logoutMutation = useMutation({
     mutationFn: logoutUser,
-    onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['auth-user'] })
+    onSuccess: async () => {
+      queryClient.setQueryData(['auth-user'], null)
+      await queryClient.cancelQueries({ queryKey: ['auth-user'] })
+      queryClient.removeQueries({ queryKey: ['auth-user'] })
       navigate('/login', { replace: true })
     },
   })
@@ -141,8 +144,8 @@ function App() {
   }
 
   const authError = authQuery.error as ApiError | null
-  const isUnauthenticated = authError?.status === 401
-  const user = authQuery.data ?? null
+  const isUnauthenticated = authError?.status === 401 || authError?.status === 403
+  const user = isUnauthenticated ? null : authQuery.data ?? null
   const showHeader = Boolean(user) && location.pathname !== '/login'
 
   return (

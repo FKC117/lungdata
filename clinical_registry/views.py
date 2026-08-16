@@ -1,6 +1,7 @@
 import csv
 
 from django.contrib.auth import authenticate, login, logout
+from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db.models import BooleanField, CharField, Count, OuterRef, Prefetch, Q, Subquery
 from django.http import HttpResponse
@@ -21,6 +22,7 @@ from clinical_registry.models import (
     DiagnosisLateralityOption,
     DiagnosisMetastaticSiteOption,
     DiagnosisPrimarySiteOption,
+    DoctorProfile,
     DistrictOption,
     GenderOption,
     HistopathologyOption,
@@ -48,15 +50,17 @@ def user_is_in_named_group(user, *group_names):
 def get_user_role(user):
     if user.is_superuser or user.is_staff:
         return "admin"
+    if DoctorProfile.objects.filter(user=user, is_active=True).exists():
+        return "doctor"
     if user_is_in_named_group(user, "Doctor", "Doctors"):
         return "doctor"
     return "user"
 
 
 def get_default_redirect_for_role(role):
-    if role == "admin":
-        return "/admin/"
-    return "/patients"
+    if role in {"admin", "doctor", "user"}:
+        return "/patients"
+    return "/login"
 
 
 def user_has_role(user, requested_role):
@@ -82,6 +86,35 @@ def serialize_user(user):
         "is_staff": user.is_staff,
         "is_superuser": user.is_superuser,
     }
+
+
+def scope_patients_for_user(queryset, user):
+    role = get_user_role(user)
+    if role == "admin":
+        return queryset
+    return queryset.filter(created_by=user)
+
+
+def scope_observations_for_user(queryset, user):
+    role = get_user_role(user)
+    if role == "admin":
+        return queryset
+    return queryset.filter(created_by=user)
+
+
+class IsOwnedByRequesterOrAdmin(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser or request.user.is_staff:
+            return True
+        owner = getattr(obj, "created_by", None)
+        return owner_id_matches(request.user.id, owner)
+
+
+def owner_id_matches(user_id, owner):
+    owner_id = getattr(owner, "id", owner)
+    return bool(user_id and owner_id and user_id == owner_id)
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -129,6 +162,7 @@ class PatientListQuerysetMixin:
             )
             .order_by("name", "registry_id")
         )
+        queryset = scope_patients_for_user(queryset, self.request.user)
         if state == "published":
             queryset = queryset.filter(observations__is_draft=False).distinct()
         elif state == "draft":
@@ -171,13 +205,13 @@ class PatientListAPIView(PatientListQuerysetMixin, generics.ListAPIView):
                 patient.prefetched_latest_observation = (
                     patient.prefetched_observations[0] if getattr(patient, "prefetched_observations", []) else None
                 )
-            serializer = self.get_serializer(page, many=True)
+            serializer = self.get_serializer(page, many=True, context={"request": request})
             return self.get_paginated_response(serializer.data)
         for patient in queryset:
             patient.prefetched_latest_observation = (
                 patient.prefetched_observations[0] if getattr(patient, "prefetched_observations", []) else None
             )
-        serializer = self.get_serializer(queryset, many=True)
+        serializer = self.get_serializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)
 
 
@@ -267,34 +301,51 @@ class PatientDetailAPIView(generics.RetrieveAPIView):
             )
             .order_by("-observed_at", "-id")
         )
-        return Patient.objects.filter(deleted_at__isnull=True).prefetch_related(
+        observation_queryset = scope_observations_for_user(observation_queryset, self.request.user)
+        queryset = Patient.objects.filter(deleted_at__isnull=True)
+        queryset = scope_patients_for_user(queryset, self.request.user)
+        return queryset.prefetch_related(
             Prefetch("observations", queryset=observation_queryset)
         )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
+
+
+class PatientUpdateAPIView(generics.UpdateAPIView):
+    serializer_class = PatientEntrySerializer
+    lookup_field = "registry_id"
+    permission_classes = [permissions.IsAuthenticated, IsOwnedByRequesterOrAdmin]
+
+    def get_queryset(self):
+        queryset = Patient.objects.filter(deleted_at__isnull=True)
+        return scope_patients_for_user(queryset, self.request.user)
+
+    def get_serializer_context(self):
+        return {"request": self.request}
 
 
 class DashboardSummaryAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        patients_qs = scope_patients_for_user(
+            Patient.objects.filter(deleted_at__isnull=True),
+            request.user,
+        )
+        observations_qs = scope_observations_for_user(
+            ClinicalObservation.objects.filter(deleted_at__isnull=True),
+            request.user,
+        )
         data = {
-            "patients": Patient.objects.filter(deleted_at__isnull=True).count(),
-            "observations": ClinicalObservation.objects.filter(deleted_at__isnull=True).count(),
-            "published_patients": Patient.objects.filter(
-                deleted_at__isnull=True,
-                observations__is_draft=False,
-            ).distinct().count(),
-            "draft_patients": Patient.objects.filter(
-                deleted_at__isnull=True,
-                observations__is_draft=True,
-            ).distinct().count(),
-            "published_observations": ClinicalObservation.objects.filter(
-                deleted_at__isnull=True,
-                is_draft=False,
-            ).count(),
-            "draft_observations": ClinicalObservation.objects.filter(
-                deleted_at__isnull=True,
-                is_draft=True,
-            ).count(),
+            "patients": patients_qs.count(),
+            "observations": observations_qs.count(),
+            "published_patients": patients_qs.filter(observations__is_draft=False).distinct().count(),
+            "draft_patients": patients_qs.filter(observations__is_draft=True).distinct().count(),
+            "published_observations": observations_qs.filter(is_draft=False).count(),
+            "draft_observations": observations_qs.filter(is_draft=True).count(),
         }
         return Response(data)
 
@@ -302,7 +353,7 @@ class DashboardSummaryAPIView(APIView):
 class CsrfCookieAPIView(APIView):
     permission_classes = [permissions.AllowAny]
 
-    @ensure_csrf_cookie
+    @method_decorator(ensure_csrf_cookie)
     def get(self, request):
         return Response({"detail": "CSRF cookie set."})
 
@@ -470,7 +521,7 @@ class PatientCreateAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        serializer = PatientEntrySerializer(data=request.data)
+        serializer = PatientEntrySerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         patient = serializer.save()
         return Response(

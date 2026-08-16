@@ -1,12 +1,15 @@
 import { type Dispatch, type FormEvent, type SetStateAction, useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import {
   createPatientEntry,
   fetchPatientDemographics,
+  fetchPatientDetail,
   type ApiError,
+  type PatientDetail,
   type PatientEntryPayload,
+  updatePatientEntry,
 } from '../api'
 
 type MarkerForm = { name: string; value: string; unit: string; observed_on: string }
@@ -195,6 +198,22 @@ function formatDateInput(value: Date) {
   return `${year}-${month}-${day}`
 }
 
+function formatDateTimeLocal(value: string | null | undefined) {
+  if (!value) {
+    return ''
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value.slice(0, 16)
+  }
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
 function calculateAgeAtDate(dateOfBirth: string, referenceDate: string) {
   const dob = parseDateInput(dateOfBirth)
   const reference = parseDateInput(referenceDate)
@@ -223,12 +242,16 @@ function estimateDateOfBirthFromAge(ageValue: string, referenceDate: string) {
 }
 
 export default function PatientEntryPage() {
+  const { registryId = '' } = useParams()
   const navigate = useNavigate()
+  const isEditMode = Boolean(registryId)
   const [activeStep, setActiveStep] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [saveMode, setSaveMode] = useState<'draft' | 'published'>('draft')
   const [ageInputMode, setAgeInputMode] = useState<'dob' | 'age'>('dob')
+  const [editingObservationId, setEditingObservationId] = useState<number | null>(null)
+  const [formHydrated, setFormHydrated] = useState(false)
   const [patient, setPatient] = useState({
     registry_id: '',
     legacy_unique_id: '',
@@ -300,6 +323,11 @@ export default function PatientEntryPage() {
     emptyRadiotherapy(),
   ])
   const [surgeries, setSurgeries] = useState<SurgeryForm[]>([emptySurgery()])
+  const patientDetailQuery = useQuery({
+    queryKey: ['patient-edit-detail', registryId],
+    queryFn: () => fetchPatientDetail(registryId),
+    enabled: isEditMode,
+  })
   const demographicsQuery = useQuery({
     queryKey: ['patient-demographics', patient.district, observation.diagnosis_disease_group],
     queryFn: () => fetchPatientDemographics(patient.district, observation.diagnosis_disease_group),
@@ -321,6 +349,206 @@ export default function PatientEntryPage() {
     )
   }, [ageInputMode, ageReferenceDate, patient.age])
 
+  useEffect(() => {
+    if (!isEditMode || !patientDetailQuery.data || formHydrated) {
+      return
+    }
+    const detail: PatientDetail = patientDetailQuery.data
+    const sourceObservation = detail.observations[0] ?? null
+    const sourceHistory = sourceObservation?.history ?? null
+    const sourceClinicalStage = sourceObservation?.clinical_stagings[0] ?? null
+    const sourcePathologicalStage = sourceObservation?.pathological_stagings[0] ?? null
+    const sourcePathologicalDetail = sourceObservation?.pathological_staging_details[0] ?? null
+
+    setPatient({
+      registry_id: detail.registry_id || '',
+      legacy_unique_id: detail.legacy_unique_id || '',
+      registration_no: detail.registration_no || '',
+      name: detail.name || '',
+      phone: detail.phone || '',
+      email: detail.email || '',
+      nid: detail.nid || '',
+      date_of_birth: dateOnly(detail.date_of_birth || ''),
+      age: detail.age != null ? String(detail.age) : '',
+      gender: detail.gender || '',
+      blood_group: detail.blood_group || '',
+      area: detail.area || '',
+      police_station: detail.police_station || '',
+      district: detail.district || '',
+      socio_economic_status: detail.socio_economic_status || '',
+      passport: detail.passport || '',
+      patient_type: detail.patient_type || '',
+    })
+    setObservation({
+      observed_at: formatDateTimeLocal(sourceObservation?.observed_at),
+      consulting_doctor_name: sourceObservation?.consulting_doctor_name || '',
+      center_name: sourceObservation?.center_name || '',
+      cancer_type: sourceObservation?.cancer_type || '',
+      diagnosis_disease_group: sourceObservation?.diagnosis_disease_group || '',
+      diagnosis_subgroup: sourceObservation?.diagnosis_subgroup || '',
+      diagnosis_primary_site: sourceObservation?.diagnosis_primary_site || '',
+      diagnosis_laterality: sourceObservation?.diagnosis_laterality || '',
+      grade: sourceObservation?.grade || '',
+      laterality_notes: '',
+      diagnoses_text: (sourceObservation?.diagnoses ?? []).map((item) => item.detail).filter(Boolean).join('\n'),
+      metastatic_sites_text: (sourceObservation?.metastatic_sites ?? []).map((item) => item.value).filter(Boolean).join('\n'),
+      comorbidities_text: (sourceObservation?.comorbidities ?? []).map((item) => item.detail).filter(Boolean).join('\n'),
+      clinical_t: sourceClinicalStage?.t || '',
+      clinical_n: sourceClinicalStage?.n || '',
+      clinical_m: sourceClinicalStage?.m || '',
+      clinical_result: sourceClinicalStage?.result || '',
+      clinical_staged_on: dateOnly(sourceClinicalStage?.staged_on || ''),
+      pathological_t: sourcePathologicalStage?.t || '',
+      pathological_n: sourcePathologicalStage?.n || '',
+      pathological_m: sourcePathologicalStage?.m || '',
+      pathological_result: sourcePathologicalStage?.result || '',
+      pathological_staged_on: dateOnly(sourcePathologicalStage?.staged_on || ''),
+      pathological_lvsi: sourcePathologicalDetail?.lvsi || '',
+      pathological_pni: sourcePathologicalDetail?.pni || '',
+      pathological_margin: sourcePathologicalDetail?.margin || '',
+      pathological_ki67: sourcePathologicalDetail?.ki67 || '',
+      pathological_detail_staged_on: dateOnly(sourcePathologicalDetail?.staged_on || ''),
+    })
+    setHistory({
+      marital_status: sourceHistory?.marital_status || '',
+      dietary_habit: sourceHistory?.dietary_habit || '',
+      height_cm: sourceHistory?.height_cm != null ? String(sourceHistory.height_cm) : '',
+      weight_kg: sourceHistory?.weight_kg != null ? String(sourceHistory.weight_kg) : '',
+      bmi: sourceHistory?.bmi != null ? String(sourceHistory.bmi) : '',
+      alcohol_history: sourceHistory?.alcohol_history || '',
+      radiotherapy_to_chest: sourceHistory?.radiotherapy_to_chest || '',
+      family_cancer_history: sourceHistory?.family_cancer_history || '',
+      known_mutation: sourceHistory?.known_mutation || '',
+      first_diagnosis_date: dateOnly(sourceHistory?.first_diagnosis_date || ''),
+    })
+    setSmokingHistories(
+      sourceHistory?.smoking_histories.length
+        ? sourceHistory.smoking_histories.map((item) => ({
+            status: item.status || '',
+            cigarettes_per_day: item.cigarettes_per_day != null ? String(item.cigarettes_per_day) : '',
+            duration_years: item.duration_years != null ? String(item.duration_years) : '',
+            pack_years: item.pack_years != null ? String(item.pack_years) : '',
+            quit_period_years: item.quit_period_years != null ? String(item.quit_period_years) : '',
+          }))
+        : [emptySmoking()],
+    )
+    setTbHistories(
+      sourceHistory?.tb_histories.length
+        ? sourceHistory.tb_histories.map((item) => ({
+            status: item.status || '',
+            date: dateOnly(item.date || ''),
+            treatment: item.treatment || '',
+          }))
+        : [emptyTb()],
+    )
+    setCovidHistories(
+      sourceHistory?.covid_histories.length
+        ? sourceHistory.covid_histories.map((item) => ({
+            status: item.status || '',
+            date: dateOnly(item.date || ''),
+            vaccine_name: item.vaccine_name || '',
+            vaccination_dose: item.vaccination_dose || '',
+          }))
+        : [emptyCovid()],
+    )
+    setMarkers(
+      sourceObservation?.cancer_markers.length
+        ? sourceObservation.cancer_markers.map((item) => ({
+            name: item.name || '',
+            value: item.value || '',
+            unit: item.unit || '',
+            observed_on: dateOnly(item.observed_on || ''),
+          }))
+        : [emptyMarker()],
+    )
+    setHistopathologies(
+      sourceObservation?.histopathologies.length
+        ? sourceObservation.histopathologies.map((item) => ({
+            detail: item.detail || '',
+            site: item.site || '',
+            histology_type: item.histology_type || '',
+            observed_on: dateOnly(item.observed_on || ''),
+          }))
+        : [emptyHistopathology()],
+    )
+    setMolecularPathologies(
+      sourceObservation?.molecular_pathologies.length
+        ? sourceObservation.molecular_pathologies.map((item) => ({
+            specimen: item.specimen || '',
+            method: item.method || '',
+            gene: item.gene || '',
+            exon: item.exon || '',
+            status: item.status || '',
+            observed_on: dateOnly(item.observed_on || ''),
+          }))
+        : [emptyMolecular()],
+    )
+    setIhcPanels(
+      sourceObservation?.ihc_panels.length
+        ? sourceObservation.ihc_panels.map((panel) => ({
+            observed_on: dateOnly(panel.observed_on || ''),
+            details: panel.details.length
+              ? panel.details.map((detail) => ({
+                  marker_type: detail.marker_type || '',
+                  value: detail.value || '',
+                }))
+              : [emptyIhcDetail()],
+          }))
+        : [emptyIhcPanel()],
+    )
+    setTreatmentCycles(
+      sourceObservation?.treatment_cycles.length
+        ? sourceObservation.treatment_cycles.map((item) => ({
+            current_chemo_protocol: item.current_chemo_protocol || '',
+            chemo_cycle_no: item.chemo_cycle_no || '',
+            chemo_detail: item.chemo_detail || '',
+            chemo_starting_date: dateOnly(item.chemo_starting_date || ''),
+            chemo_end_date: dateOnly(item.chemo_end_date || ''),
+            line_of_treatment: item.line_of_treatment || '',
+            disease_progression_status: item.disease_progression_status || '',
+            disease_progression_status_date: dateOnly(item.disease_progression_status_date || ''),
+            survival_status: item.survival_status || '',
+            survival_status_date: dateOnly(item.survival_status_date || ''),
+          }))
+        : [emptyTreatmentCycle()],
+    )
+    setPastTreatments(
+      sourceObservation?.past_treatment_histories.length
+        ? sourceObservation.past_treatment_histories.map((item) => ({
+            detail: item.detail || '',
+            date: dateOnly(item.date || ''),
+          }))
+        : [emptyPastTreatment()],
+    )
+    setRadiotherapySchedules(
+      sourceObservation?.radiotherapy_schedules.length
+        ? sourceObservation.radiotherapy_schedules.map((item) => ({
+            start_date: dateOnly(item.start_date || ''),
+            end_date: dateOnly(item.end_date || ''),
+            intent: item.intent || '',
+            fraction: item.fraction || '',
+            fraction_number: item.fraction_number || '',
+            total_dose: item.total_dose || '',
+            sites_text: item.sites.map((site) => site.value).filter(Boolean).join('\n'),
+            modalities_text: item.modalities.map((modality) => modality.value).filter(Boolean).join('\n'),
+          }))
+        : [emptyRadiotherapy()],
+    )
+    setSurgeries(
+      sourceObservation?.surgeries.length
+        ? sourceObservation.surgeries.map((item) => ({
+            surgery_date: dateOnly(item.surgery_date || ''),
+            modality: item.modality || '',
+            lateralities_text: item.lateralities.map((laterality) => laterality.value).filter(Boolean).join('\n'),
+          }))
+        : [emptySurgery()],
+    )
+    setEditingObservationId(sourceObservation?.id ?? null)
+    setSaveMode(sourceObservation?.is_draft || detail.is_draft ? 'draft' : 'published')
+    setAgeInputMode(detail.date_of_birth ? 'dob' : detail.age != null ? 'age' : 'dob')
+    setFormHydrated(true)
+  }, [formHydrated, isEditMode, patientDetailQuery.data])
+
   const createMutation = useMutation({
     mutationFn: createPatientEntry,
     onSuccess: (response) => {
@@ -334,6 +562,21 @@ export default function PatientEntryPage() {
       const apiError = error as ApiError
       setSuccessMessage('')
       setErrorMessage(apiError.message || 'Unable to save patient entry.')
+    },
+  })
+  const updateMutation = useMutation({
+    mutationFn: (payload: PatientEntryPayload) => updatePatientEntry(registryId, payload),
+    onSuccess: (response) => {
+      setErrorMessage('')
+      setSuccessMessage(`Updated ${response.name} (${response.registry_id}). Redirecting...`)
+      window.setTimeout(() => {
+        navigate(`/patients/${response.registry_id}`)
+      }, 700)
+    },
+    onError: (error) => {
+      const apiError = error as ApiError
+      setSuccessMessage('')
+      setErrorMessage(apiError.message || 'Unable to update patient entry.')
     },
   })
 
@@ -385,6 +628,7 @@ export default function PatientEntryPage() {
 
   function buildPayload(): PatientEntryPayload {
     return {
+      observation_id: editingObservationId ?? undefined,
       registry_id: patient.registry_id || undefined,
       legacy_unique_id: patient.legacy_unique_id || undefined,
       registration_no: patient.registration_no || undefined,
@@ -555,11 +799,49 @@ export default function PatientEntryPage() {
     }
     setErrorMessage('')
     setSuccessMessage('')
+    if (isEditMode) {
+      updateMutation.mutate(buildPayload())
+      return
+    }
     createMutation.mutate(buildPayload())
   }
 
   const isFirstStep = activeStep === 0
   const isLastStep = activeStep === steps.length - 1
+  const isSubmitting = createMutation.isPending || updateMutation.isPending
+
+  if (isEditMode && patientDetailQuery.isLoading) {
+    return (
+      <section className="panel">
+        <p className="eyebrow">Edit Patient Entry</p>
+        <h3>Loading record</h3>
+      </section>
+    )
+  }
+
+  if (isEditMode && !patientDetailQuery.data) {
+    return (
+      <section className="panel">
+        <p className="eyebrow">Edit Patient Entry</p>
+        <h3>Record unavailable</h3>
+        <p className="entry-inline-note">
+          The selected patient record could not be loaded for editing.
+        </p>
+      </section>
+    )
+  }
+
+  if (isEditMode && patientDetailQuery.data && !patientDetailQuery.data.can_edit) {
+    return (
+      <section className="panel">
+        <p className="eyebrow">Edit Patient Entry</p>
+        <h3>Editing not allowed</h3>
+        <p className="entry-inline-note">
+          This account cannot edit the selected patient record.
+        </p>
+      </section>
+    )
+  }
 
   return (
     <section className="page-grid">
@@ -570,8 +852,8 @@ export default function PatientEntryPage() {
 
       <section className="hero-panel hero-panel-tight">
         <div className="hero-copy">
-          <p className="eyebrow">New Patient Entry</p>
-          <h2>Create patient, diagnosis, and treatment record</h2>
+          <p className="eyebrow">{isEditMode ? 'Edit Patient Entry' : 'New Patient Entry'}</p>
+          <h2>{isEditMode ? 'Update patient, diagnosis, and treatment record' : 'Create patient, diagnosis, and treatment record'}</h2>
           <p className="hero-text">
             This workflow is now organized like the legacy experience: patient demography,
             diagnosis workup, then treatment planning and follow-up.
@@ -2079,8 +2361,14 @@ export default function PatientEntryPage() {
                   <ChevronRight size={16} />
                 </button>
               ) : (
-                <button type="submit" className="primary-button" disabled={createMutation.isPending}>
-                  {createMutation.isPending ? 'Saving entry...' : 'Create patient entry'}
+                <button type="submit" className="primary-button" disabled={isSubmitting}>
+                  {isSubmitting
+                    ? isEditMode
+                      ? 'Updating entry...'
+                      : 'Saving entry...'
+                    : isEditMode
+                    ? 'Update patient entry'
+                    : 'Create patient entry'}
                 </button>
               )}
             </div>

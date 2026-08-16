@@ -545,6 +545,11 @@ export default function PatientDetailPage() {
             ))}
           </div>
           <div className="panel-actions">
+            {patient.can_edit ? (
+              <Link className="secondary-button" to={`/patients/${patient.registry_id}/edit`}>
+                Edit record
+              </Link>
+            ) : null}
             <button type="button" className="secondary-button" onClick={printRecord}>
               <Printer size={16} />
               Print record
@@ -1613,6 +1618,14 @@ export default function PatientDetailPage() {
                 />
               </div>
               <div className="timeline-actions">
+                {patient.can_edit && observation.can_edit ? (
+                  <Link
+                    className="secondary-button"
+                    to={`/patients/${patient.registry_id}/edit`}
+                  >
+                    Edit
+                  </Link>
+                ) : null}
                 <button
                   type="button"
                   className="secondary-button"

@@ -64,6 +64,7 @@ export interface Patient {
   socio_economic_status: string | null
   observation_count: number
   latest_observation: ClinicalObservationSummary | null
+  can_edit: boolean
 }
 
 export interface PatientDetail {
@@ -87,6 +88,7 @@ export interface PatientDetail {
   passport: string | null
   patient_type: string | null
   is_draft: boolean
+  can_edit: boolean
   observations: ClinicalObservation[]
 }
 
@@ -104,6 +106,7 @@ export interface ClinicalObservationSummary {
   diagnosis_laterality: string | null
   grade: string | null
   is_draft: boolean
+  can_edit: boolean
 }
 
 export interface ClinicalObservation extends ClinicalObservationSummary {
@@ -119,6 +122,7 @@ export interface ClinicalObservation extends ClinicalObservationSummary {
   pathological_staging_details: PathologicalStagingDetail[]
   ihc_panels: IHCPanel[]
   treatment_cycles: TreatmentCycle[]
+  past_treatment_histories: PastTreatmentHistory[]
   radiotherapy_schedules: RadiotherapySchedule[]
   surgeries: Surgery[]
 }
@@ -257,6 +261,12 @@ export interface TreatmentCycle {
   overall_survival: string | null
 }
 
+export interface PastTreatmentHistory {
+  id: number
+  detail: string | null
+  date: string | null
+}
+
 export interface RadiotherapySchedule {
   id: number
   start_date: string | null
@@ -277,6 +287,7 @@ export interface Surgery {
 }
 
 export interface PatientEntryPayload {
+  observation_id?: number
   registry_id?: string
   legacy_unique_id?: string
   registration_no?: string
@@ -559,6 +570,16 @@ export function createPatientEntry(payload: PatientEntryPayload) {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+export function updatePatientEntry(registryId: string, payload: PatientEntryPayload) {
+  return request<{ id: number; registry_id: string; name: string }>(
+    `/api/patients/${registryId}/update/`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    },
+  )
 }
 
 export function buildPatientExportUrl(

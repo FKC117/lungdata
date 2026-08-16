@@ -1,4 +1,6 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.contrib.auth.models import User
 
 from clinical_registry.models import (
     AlcoholHistoryOption,
@@ -19,6 +21,7 @@ from clinical_registry.models import (
     DiagnosisLateralityOption,
     DiagnosisMetastaticSiteOption,
     DiagnosisPrimarySiteOption,
+    DoctorProfile,
     DistrictOption,
     Diagnosis,
     DiagnosisMetastaticSite,
@@ -58,6 +61,44 @@ class LookupOptionAdmin(admin.ModelAdmin):
     search_fields = ("name",)
     list_filter = ("is_active",)
     ordering = ("name",)
+
+
+class DoctorProfileInline(admin.StackedInline):
+    model = DoctorProfile
+    extra = 0
+    fk_name = "user"
+
+
+try:
+    admin.site.unregister(User)
+except admin.sites.NotRegistered:
+    pass
+
+
+@admin.register(User)
+class RegistryUserAdmin(DjangoUserAdmin):
+    inlines = [DoctorProfileInline]
+    list_display = (
+        "username",
+        "email",
+        "first_name",
+        "last_name",
+        "get_registry_role",
+        "is_staff",
+        "is_active",
+    )
+    list_filter = ("is_staff", "is_superuser", "is_active", "groups")
+    search_fields = ("username", "first_name", "last_name", "email")
+
+    @admin.display(description="Registry role")
+    def get_registry_role(self, obj):
+        if obj.is_superuser or obj.is_staff:
+            return "Admin"
+        if hasattr(obj, "doctor_profile") and obj.doctor_profile.is_active:
+            return "Doctor"
+        if obj.groups.filter(name__in=["Doctor", "Doctors"]).exists():
+            return "Doctor"
+        return "User"
 
 
 @admin.register(GenderOption)
@@ -183,6 +224,32 @@ class PatientAdmin(admin.ModelAdmin):
     search_fields = ("registry_id", "legacy_unique_id", "registration_no", "name", "phone", "email", "nid")
     list_filter = ("gender", "district", "is_draft")
     ordering = ("name", "registry_id")
+
+
+@admin.register(DoctorProfile)
+class DoctorProfileAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "display_name",
+        "user",
+        "designation",
+        "department",
+        "phone",
+        "registration_number",
+        "is_active",
+    )
+    search_fields = (
+        "display_name",
+        "user__username",
+        "user__first_name",
+        "user__last_name",
+        "designation",
+        "department",
+        "phone",
+        "registration_number",
+    )
+    list_filter = ("is_active", "department")
+    ordering = ("display_name", "user__username")
 
 
 @admin.register(ClinicalObservation)

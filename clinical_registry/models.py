@@ -1,4 +1,6 @@
 from django.db import models
+from django.contrib.auth.models import Group
+from django.conf import settings
 
 
 class TimeStampedModel(models.Model):
@@ -41,6 +43,13 @@ class Patient(SoftDeleteModel):
     passport = models.CharField(max_length=32, blank=True)
     patient_type = models.CharField(max_length=32, blank=True)
     is_draft = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="created_patients",
+        blank=True,
+        null=True,
+    )
 
     class Meta:
         ordering = ["name", "registry_id"]
@@ -54,6 +63,32 @@ class Patient(SoftDeleteModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.registry_id})"
+
+
+class DoctorProfile(TimeStampedModel):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="doctor_profile",
+    )
+    display_name = models.CharField(max_length=191, blank=True)
+    designation = models.CharField(max_length=191, blank=True)
+    department = models.CharField(max_length=191, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    registration_number = models.CharField(max_length=64, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "clinical_doctor_profiles"
+        ordering = ["display_name", "user__username"]
+
+    def __str__(self) -> str:
+        return self.display_name or self.user.get_full_name() or self.user.get_username()
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        doctors_group, _ = Group.objects.get_or_create(name="Doctors")
+        self.user.groups.add(doctors_group)
 
 
 class LookupOption(TimeStampedModel):
@@ -240,6 +275,13 @@ class ClinicalObservation(SoftDeleteModel):
     grade = models.CharField(max_length=191, blank=True)
     laterality_notes = models.TextField(blank=True)
     is_draft = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="created_observations",
+        blank=True,
+        null=True,
+    )
 
     class Meta:
         ordering = ["-observed_at", "-id"]

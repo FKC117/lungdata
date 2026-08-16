@@ -528,6 +528,18 @@ export default function PatientSearchPage() {
                                 </div>
                               </div>
                               <div className="expanded-actions">
+                                {patient.can_edit ? (
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      navigate(`/patients/${patient.registry_id}/edit`)
+                                    }}
+                                  >
+                                    Edit Record
+                                  </button>
+                                ) : null}
                                 <button
                                   type="button"
                                   className="secondary-button"
