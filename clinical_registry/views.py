@@ -10,6 +10,13 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from clinical_registry.access import (
+    get_linked_legacy_doctor,
+    scope_observations_for_user,
+    scope_patients_for_user,
+    user_can_edit_patient,
+    user_is_admin,
+)
 from clinical_registry.models import (
     AlcoholHistoryOption,
     BloodGroupOption,
@@ -76,6 +83,7 @@ def user_has_role(user, requested_role):
 
 def serialize_user(user):
     role = get_user_role(user)
+    linked_doctor = get_linked_legacy_doctor(user)
     return {
         "id": user.id,
         "username": user.get_username(),
@@ -85,29 +93,40 @@ def serialize_user(user):
         "default_redirect": get_default_redirect_for_role(role),
         "is_staff": user.is_staff,
         "is_superuser": user.is_superuser,
+        "legacy_doctor_id": linked_doctor.legacy_id if linked_doctor else None,
+        "legacy_doctor_name": linked_doctor.name if linked_doctor else "",
     }
-
-
-def scope_patients_for_user(queryset, user):
-    role = get_user_role(user)
-    if role == "admin":
-        return queryset
-    return queryset.filter(created_by=user)
-
-
-def scope_observations_for_user(queryset, user):
-    role = get_user_role(user)
-    if role == "admin":
-        return queryset
-    return queryset.filter(created_by=user)
 
 
 class IsOwnedByRequesterOrAdmin(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if not request.user or not request.user.is_authenticated:
             return False
-        if request.user.is_superuser or request.user.is_staff:
+        if user_is_admin(request.user):
             return True
+        if isinstance(obj, Patient):
+            return user_can_edit_patient(request.user, obj)
+        patient = getattr(obj, "patient", None)
+        if patient is not None:
+            return user_can_edit_patient(request.user, patient)
+        observation = getattr(obj, "observation", None)
+        if observation is not None:
+            return user_can_edit_patient(request.user, observation.patient)
+        patient_history = getattr(obj, "patient_history", None)
+        if patient_history is not None:
+            return user_can_edit_patient(request.user, patient_history.observation.patient)
+        treatment_cycle = getattr(obj, "treatment_cycle", None)
+        if treatment_cycle is not None:
+            return user_can_edit_patient(request.user, treatment_cycle.observation.patient)
+        radiotherapy_schedule = getattr(obj, "radiotherapy_schedule", None)
+        if radiotherapy_schedule is not None:
+            return user_can_edit_patient(request.user, radiotherapy_schedule.observation.patient)
+        surgery = getattr(obj, "surgery", None)
+        if surgery is not None:
+            return user_can_edit_patient(request.user, surgery.observation.patient)
+        ihc = getattr(obj, "ihc", None)
+        if ihc is not None:
+            return user_can_edit_patient(request.user, ihc.observation.patient)
         owner = getattr(obj, "created_by", None)
         return owner_id_matches(request.user.id, owner)
 

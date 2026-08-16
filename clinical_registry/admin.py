@@ -6,32 +6,55 @@ from clinical_registry.models import (
     AlcoholHistoryOption,
     BloodGroupOption,
     CancerMarker,
+    CancerMarkerRecord,
+    Center,
     ChemotherapyModality,
+    ChemotherapyModalityRecord,
     ChemotherapyProtocol,
     ChemotherapyProtocolDetail,
+    ChemotherapyProtocolRecord,
     ClinicalObservation,
     ClinicalStaging,
     Comorbidity,
+    ComorbidityRecord,
     CovidStatusOption,
     CovidVaccinationDoseOption,
     CovidVaccineOption,
+    CovidVaccineCompanyRecord,
     CovidHistory,
+    DiagnosisDiseaseGroupRecord,
     DiagnosisDiseaseGroupOption,
+    DiagnosisDiseaseSubgroupRecord,
     DiagnosisDiseaseSubgroupOption,
+    DiagnosisLaterilityRecord,
     DiagnosisLateralityOption,
+    DiagnosisMetastaticSiteRecord,
     DiagnosisMetastaticSiteOption,
+    DiagnosisPrimarySiteRecord,
     DiagnosisPrimarySiteOption,
+    DiseaseProgressionStatusRecord,
+    Doctor,
+    DoctorDegree,
+    DoctorPatient,
     DoctorProfile,
+    DoctorRecognitionRecord,
     DistrictOption,
     Diagnosis,
     DiagnosisMetastaticSite,
+    ExonRecord,
     GenderOption,
     Histopathology,
+    HistopathologyRecord,
     HistopathologyOption,
     IHCDetail,
+    IhcRecord,
     IhcMarkerOption,
     Immunohistochemistry,
+    LineOfTreatmentRecord,
+    LegacyImportAnomaly,
+    LegacyUser,
     MolecularPathology,
+    MolecularPathologyRecord,
     MolecularPathologyOption,
     MaritalStatusOption,
     PastTreatmentHistory,
@@ -41,14 +64,23 @@ from clinical_registry.models import (
     PatientTypeOption,
     PatientHistory,
     PoliceStationOption,
+    RadiotherapyScheduleIntentRecord,
+    RadiotherapyScheduleRecord,
     RadiotherapySchedule,
     RadiotherapyScheduleModality,
     RadiotherapyScheduleSite,
+    ResponseRateCalculationRecord,
+    ResponseRateRecord,
     SmokingStatusOption,
     SmokingHistory,
+    SocioEconomicStatusRecord,
+    StagingCalculationRecord,
     SocioEconomicStatusOption,
     Surgery,
+    SurgeryModalityRecord,
+    SurgicalLateralityRecord,
     SurgicalLaterality,
+    SurvivalStatusRecord,
     TreatmentCycle,
     TreatmentCycleProgressionSite,
     TuberculosisStatusOption,
@@ -63,10 +95,17 @@ class LookupOptionAdmin(admin.ModelAdmin):
     ordering = ("name",)
 
 
+class LegacyNamedRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "name", "updated_at")
+    search_fields = ("name", "legacy_id")
+    ordering = ("name", "legacy_id")
+
+
 class DoctorProfileInline(admin.StackedInline):
     model = DoctorProfile
     extra = 0
     fk_name = "user"
+    autocomplete_fields = ("doctor",)
 
 
 try:
@@ -99,6 +138,232 @@ class RegistryUserAdmin(DjangoUserAdmin):
         if obj.groups.filter(name__in=["Doctor", "Doctors"]).exists():
             return "Doctor"
         return "User"
+
+
+@admin.register(Center)
+class CenterAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "name", "updated_at")
+    search_fields = ("name", "legacy_id")
+    ordering = ("name", "legacy_id")
+
+
+@admin.register(Doctor)
+class DoctorAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "legacy_id",
+        "name",
+        "designation",
+        "department",
+        "center",
+        "status",
+        "updated_at",
+    )
+    search_fields = ("name", "email", "phone", "bmdc_number", "legacy_id")
+    list_filter = ("designation", "department", "status", "center")
+    ordering = ("name", "legacy_id")
+
+
+@admin.register(DoctorDegree)
+class DoctorDegreeAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "doctor", "degree", "updated_at")
+    search_fields = ("doctor__name", "degree", "legacy_id")
+    ordering = ("doctor__name", "degree")
+
+
+@admin.register(DoctorPatient)
+class DoctorPatientAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "doctor", "patient", "updated_at")
+    search_fields = ("doctor__name", "patient__name", "patient__registry_id", "legacy_id")
+    ordering = ("doctor__name", "patient__name")
+
+
+@admin.register(DoctorRecognitionRecord)
+class DoctorRecognitionRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "group", "value")
+    search_fields = ("group", "value", "legacy_id")
+    list_filter = ("group",)
+    ordering = ("group", "value")
+
+
+@admin.register(LegacyUser)
+class LegacyUserAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "name", "email", "status", "updated_at")
+    search_fields = ("name", "email", "legacy_id")
+    list_filter = ("status",)
+    ordering = ("name", "legacy_id")
+
+
+@admin.register(LegacyImportAnomaly)
+class LegacyImportAnomalyAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "source_table",
+        "legacy_row_id",
+        "missing_reference_field",
+        "missing_reference_id",
+        "resolution_status",
+        "updated_at",
+    )
+    search_fields = ("source_table", "legacy_row_id", "missing_reference_field", "reason")
+    list_filter = ("source_table", "missing_reference_field", "resolution_status")
+    ordering = ("source_table", "legacy_row_id")
+    readonly_fields = ("payload", "reason", "created_at", "updated_at")
+
+
+@admin.register(DiagnosisDiseaseGroupRecord)
+class DiagnosisDiseaseGroupRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(DiagnosisPrimarySiteRecord)
+class DiagnosisPrimarySiteRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(DiagnosisLaterilityRecord)
+class DiagnosisLaterilityRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(DiagnosisMetastaticSiteRecord)
+class DiagnosisMetastaticSiteRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(IhcRecord)
+class IhcRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(SocioEconomicStatusRecord)
+class SocioEconomicStatusRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(CovidVaccineCompanyRecord)
+class CovidVaccineCompanyRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(ChemotherapyProtocolRecord)
+class ChemotherapyProtocolRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(ChemotherapyModalityRecord)
+class ChemotherapyModalityRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(SurgeryModalityRecord)
+class SurgeryModalityRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(SurvivalStatusRecord)
+class SurvivalStatusRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(DiseaseProgressionStatusRecord)
+class DiseaseProgressionStatusRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(LineOfTreatmentRecord)
+class LineOfTreatmentRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(ComorbidityRecord)
+class ComorbidityRecordAdmin(LegacyNamedRecordAdmin):
+    pass
+
+
+@admin.register(DiagnosisDiseaseSubgroupRecord)
+class DiagnosisDiseaseSubgroupRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "name", "diagnosis_disease_group_record", "updated_at")
+    search_fields = ("name", "diagnosis_disease_group_record__name", "legacy_id")
+    list_filter = ("diagnosis_disease_group_record",)
+    ordering = ("diagnosis_disease_group_record__name", "name", "legacy_id")
+
+
+@admin.register(HistopathologyRecord)
+class HistopathologyRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "name", "type", "updated_at")
+    search_fields = ("name", "type", "legacy_id")
+    list_filter = ("type",)
+    ordering = ("type", "name", "legacy_id")
+
+
+@admin.register(MolecularPathologyRecord)
+class MolecularPathologyRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "name", "group", "updated_at")
+    search_fields = ("name", "group", "legacy_id")
+    list_filter = ("group",)
+    ordering = ("group", "name", "legacy_id")
+
+
+@admin.register(ExonRecord)
+class ExonRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "value", "molecular_pathology_record", "updated_at")
+    search_fields = ("value", "molecular_pathology_record__name", "legacy_id")
+    list_filter = ("molecular_pathology_record__group",)
+    ordering = ("molecular_pathology_record__name", "value", "legacy_id")
+
+
+@admin.register(CancerMarkerRecord)
+class CancerMarkerRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "name", "unit", "updated_at")
+    search_fields = ("name", "unit", "legacy_id")
+    ordering = ("name", "legacy_id")
+
+
+@admin.register(RadiotherapyScheduleRecord)
+class RadiotherapyScheduleRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "type", "value", "updated_at")
+    search_fields = ("type", "value", "legacy_id")
+    list_filter = ("type",)
+    ordering = ("type", "value", "legacy_id")
+
+
+@admin.register(RadiotherapyScheduleIntentRecord)
+class RadiotherapyScheduleIntentRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "value", "updated_at")
+    search_fields = ("value", "legacy_id")
+    ordering = ("value", "legacy_id")
+
+
+@admin.register(SurgicalLateralityRecord)
+class SurgicalLateralityRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "value", "updated_at")
+    search_fields = ("value", "legacy_id")
+    ordering = ("value", "legacy_id")
+
+
+@admin.register(ResponseRateRecord)
+class ResponseRateRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "type", "group", "value", "updated_at")
+    search_fields = ("type", "group", "value", "legacy_id")
+    list_filter = ("type", "group")
+    ordering = ("type", "group", "value", "legacy_id")
+
+
+@admin.register(ResponseRateCalculationRecord)
+class ResponseRateCalculationRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "type", "result", "updated_at")
+    search_fields = ("type", "result", "target_lasion", "non_target_lasion", "new_lasion", "legacy_id")
+    list_filter = ("type", "result")
+    ordering = ("type", "result", "legacy_id")
+
+
+@admin.register(StagingCalculationRecord)
+class StagingCalculationRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "legacy_id", "type", "t", "n", "m", "result", "updated_at")
+    search_fields = ("type", "t", "n", "m", "result", "legacy_id")
+    list_filter = ("type", "result")
+    ordering = ("type", "result", "legacy_id")
 
 
 @admin.register(GenderOption)
@@ -232,6 +497,7 @@ class DoctorProfileAdmin(admin.ModelAdmin):
         "id",
         "display_name",
         "user",
+        "doctor",
         "designation",
         "department",
         "phone",
@@ -243,12 +509,14 @@ class DoctorProfileAdmin(admin.ModelAdmin):
         "user__username",
         "user__first_name",
         "user__last_name",
+        "doctor__name",
         "designation",
         "department",
         "phone",
         "registration_number",
     )
-    list_filter = ("is_active", "department")
+    list_filter = ("is_active", "department", "doctor__center")
+    autocomplete_fields = ("doctor",)
     ordering = ("display_name", "user__username")
 
 

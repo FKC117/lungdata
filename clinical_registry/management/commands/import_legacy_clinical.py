@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from clinical_registry.models import (
     CancerMarker,
+    Center,
     ChemotherapyModality,
     ChemotherapyProtocol,
     ChemotherapyProtocolDetail,
@@ -15,6 +16,7 @@ from clinical_registry.models import (
     CovidHistory,
     Diagnosis,
     DiagnosisMetastaticSite,
+    Doctor,
     Histopathology,
     IHCDetail,
     Immunohistochemistry,
@@ -24,6 +26,7 @@ from clinical_registry.models import (
     PathologicalStagingDetail,
     Patient,
     PatientHistory,
+    LegacyImportAnomaly,
     RadiotherapySchedule,
     RadiotherapyScheduleModality,
     RadiotherapyScheduleSite,
@@ -45,12 +48,25 @@ class Command(BaseCommand):
             action="store_true",
             help="Delete canonical clinical data before importing.",
         )
+        parser.add_argument(
+            "--orphan-mode",
+            choices=["skip", "audit"],
+            default="skip",
+            help="How to handle legacy child rows whose parent observation/history/protocol does not exist.",
+        )
 
     def handle(self, *args, **options):
         self.skipped_counts = {}
+        self.orphan_mode = options["orphan_mode"]
 
         if options["truncate"]:
             self._truncate_target_data()
+
+        if self.orphan_mode == "audit":
+            self.audit_orphan_chains()
+            self.print_skip_summary()
+            self.stdout.write(self.style.SUCCESS("Legacy orphan audit completed successfully."))
+            return
 
         with transaction.atomic():
             self.report_duplicate_legacy_unique_ids()
@@ -65,6 +81,105 @@ class Command(BaseCommand):
 
         self.print_skip_summary()
         self.stdout.write(self.style.SUCCESS("Legacy clinical import completed successfully."))
+
+    def audit_orphan_chains(self):
+        self.report_duplicate_legacy_unique_ids()
+        self.audit_missing_parent(
+            "patient_histories",
+            "patient_observation_id",
+            set(ClinicalObservation.objects.values_list("legacy_id", flat=True)),
+        )
+        self.audit_missing_parent(
+            "smoking_histories",
+            "patient_history_id",
+            set(PatientHistory.objects.values_list("legacy_id", flat=True)),
+        )
+        self.audit_missing_parent(
+            "tb_histories",
+            "patient_history_id",
+            set(PatientHistory.objects.values_list("legacy_id", flat=True)),
+        )
+        self.audit_missing_parent(
+            "covid_histories",
+            "patient_history_id",
+            set(PatientHistory.objects.values_list("legacy_id", flat=True)),
+        )
+        for table_name in [
+            "diagnoses",
+            "diagnosis_metastatic_sites",
+            "comorbidities",
+            "histopathologies",
+            "molecular_pathologies",
+            "cancer_markers",
+            "ihcs",
+            "staging_clinicals",
+            "staging_pathologicals",
+            "staging_pathological_details",
+            "patient_observation_details",
+            "past_treatment_histories",
+            "radiotherapy_schedules",
+            "surgeries",
+        ]:
+            self.audit_missing_parent(
+                table_name,
+                "patient_observation_id",
+                set(ClinicalObservation.objects.values_list("legacy_id", flat=True)),
+            )
+        self.audit_missing_parent(
+            "ihc_details",
+            "ihc_id",
+            set(Immunohistochemistry.objects.values_list("legacy_id", flat=True)),
+        )
+        self.audit_missing_parent(
+            "patient_observation_response_rate_progression_sites",
+            "patient_observation_detail_id",
+            set(TreatmentCycle.objects.values_list("legacy_id", flat=True)),
+        )
+        self.audit_missing_parent(
+            "chemotherapy_protocols",
+            "patient_observation_detail_id",
+            set(TreatmentCycle.objects.values_list("legacy_id", flat=True)),
+        )
+        self.audit_missing_parent(
+            "chemotherapy_modalities",
+            "patient_observation_detail_id",
+            set(TreatmentCycle.objects.values_list("legacy_id", flat=True)),
+        )
+        self.audit_missing_parent(
+            "chemotherapy_protocol_details",
+            "chemotherapy_protocol_id",
+            set(ChemotherapyProtocol.objects.values_list("legacy_id", flat=True)),
+        )
+        self.audit_missing_parent(
+            "radiotherapy_schedule_sites",
+            "radiotherapy_schedule_id",
+            set(RadiotherapySchedule.objects.values_list("legacy_id", flat=True)),
+        )
+        self.audit_missing_parent(
+            "radiotherapy_schedule_modalities",
+            "radiotherapy_schedule_id",
+            set(RadiotherapySchedule.objects.values_list("legacy_id", flat=True)),
+        )
+        self.audit_missing_parent(
+            "surgical_lateralities",
+            "surgery_id",
+            set(Surgery.objects.values_list("legacy_id", flat=True)),
+        )
+
+    def audit_missing_parent(self, table_name, reference_field, existing_ids):
+        count = 0
+        for row in self.legacy_rows(f"SELECT * FROM {table_name} ORDER BY id"):
+            reference_id = row.get(reference_field)
+            if reference_id in existing_ids:
+                continue
+            self.record_orphan_row(
+                table_name,
+                row,
+                reference_field,
+                f"missing {reference_field} {reference_id}",
+            )
+            count += 1
+        self.stdout.write(self.style.SUCCESS(f"Audited {table_name}: {count} unresolved rows"))
 
     def legacy_rows(self, query):
         with connections["legacy"].cursor() as cursor:
@@ -157,6 +272,30 @@ class Command(BaseCommand):
     def skip_row(self, bucket, row_id, reason):
         self.skipped_counts.setdefault(bucket, []).append((row_id, reason))
 
+    def record_orphan_row(self, bucket, row, key_name, reason):
+        self.skip_row(bucket, row["id"], reason)
+        if self.orphan_mode != "audit":
+            return
+        LegacyImportAnomaly.objects.update_or_create(
+            source_table=bucket,
+            legacy_row_id=row["id"],
+            missing_reference_field=key_name,
+            defaults={
+                "missing_reference_id": row.get(key_name),
+                "reason": reason,
+                "payload": {key: self.serialize_payload_value(value) for key, value in row.items()},
+            },
+        )
+
+    def serialize_payload_value(self, value):
+        if value is None:
+            return None
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return str(value)
+        return value
+
     def print_skip_summary(self):
         if not self.skipped_counts:
             self.stdout.write(self.style.SUCCESS("No orphaned legacy rows were skipped."))
@@ -170,6 +309,12 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f"    row {row_id}: {reason}"))
             if len(items) > len(preview):
                 self.stdout.write(self.style.WARNING(f"    ... {len(items) - len(preview)} more"))
+        if self.orphan_mode == "audit":
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Orphan audit rows stored: {LegacyImportAnomaly.objects.count()}"
+                )
+            )
 
     def _truncate_target_data(self):
         for model in [
@@ -226,6 +371,7 @@ class Command(BaseCommand):
                     "police_station": self.clean_str(row["police_station"]),
                     "district": self.clean_str(row["district"]),
                     "socio_economic_status": self.clean_str(row["socio_economic_status"]),
+                    "photo": self.clean_str(row["photo"]),
                     "passport": self.clean_str(row["passport"]),
                     "patient_type": self.clean_str(row["type"]),
                     "is_draft": self.bool_value(row["is_draft"]),
@@ -239,20 +385,27 @@ class Command(BaseCommand):
         count = 0
         for row in self.legacy_rows("SELECT * FROM patient_observations ORDER BY id"):
             patient = self.get_patient(row["patient_id"])
+            doctor = Doctor.objects.filter(legacy_id=row["doctor_id"]).first() if row.get("doctor_id") else None
+            center = Center.objects.filter(legacy_id=row["center_id"]).first() if row.get("center_id") else None
             observation, _ = ClinicalObservation.objects.update_or_create(
                 legacy_id=row["id"],
                 defaults={
                     "patient": patient,
+                    "doctor": doctor,
+                    "center": center,
+                    "time": self.clean_datetime(row["time"]),
                     "observed_at": self.clean_datetime(row["time"]),
                     "registration_no": self.clean_str(row["registration_no"]),
-                    "consulting_doctor_name": "",
-                    "center_name": "",
+                    "consulting_doctor_name": doctor.name if doctor else "",
+                    "center_name": center.name if center else "",
                     "cancer_type": self.clean_str(row["cancer_type"]),
                     "diagnosis_disease_group": self.clean_str(row["diagnosis_disease_group"]),
                     "diagnosis_subgroup": self.clean_str(row["diagnosis_subgroup"]),
                     "diagnosis_primary_site": self.clean_str(row["diagnosis_primary_site"]),
+                    "diagnosis_laterility": self.clean_str(row["diagnosis_laterility"]),
                     "diagnosis_laterality": self.clean_str(row["diagnosis_laterility"]),
                     "grade": self.clean_str(row["grade"]),
+                    "laterality": self.clean_str(row["laterality"]),
                     "laterality_notes": self.clean_str(row["laterality"]),
                     "is_draft": self.bool_value(row["is_draft"]),
                 },
@@ -269,9 +422,10 @@ class Command(BaseCommand):
             try:
                 observation = self.get_observation(row["patient_observation_id"])
             except ClinicalObservation.DoesNotExist:
-                self.skip_row(
+                self.record_orphan_row(
                     "patient_histories",
-                    row["id"],
+                    row,
+                    "patient_observation_id",
                     f"missing patient_observation_id {row['patient_observation_id']}",
                 )
                 continue
@@ -281,11 +435,16 @@ class Command(BaseCommand):
                     "observation": observation,
                     "marital_status": self.normalize_marital_status(row["marital_status"]),
                     "dietary_habit": self.clean_str(row["dietary_habit"]),
+                    "height": self.clean_decimal(row["height"]),
                     "height_cm": self.clean_decimal(row["height"]),
+                    "weight": self.clean_decimal(row["weight"]),
                     "weight_kg": self.clean_decimal(row["weight"]),
                     "bmi": self.clean_decimal(row["bmi"]),
+                    "h_o_alcoholism": self.clean_str(row["h_o_alcoholism"]),
                     "alcohol_history": self.clean_str(row["h_o_alcoholism"]),
+                    "rt_to_chest": self.clean_str(row["rt_to_chest"]),
                     "radiotherapy_to_chest": self.clean_str(row["rt_to_chest"]),
+                    "cancer_history": self.clean_str(row["cancer_history"]),
                     "family_cancer_history": self.clean_str(row["cancer_history"]),
                     "known_mutation": self.clean_str(row["known_mutation"]),
                     "first_diagnosis_date": row["first_diagnosis_date"],
@@ -302,9 +461,13 @@ class Command(BaseCommand):
                 lambda row: {
                     "patient_history": self.get_history(row["patient_history_id"]),
                     "status": self.normalize_smoking_status(row["status"]),
+                    "per_day": row["per_day"],
                     "cigarettes_per_day": row["per_day"],
+                    "duration_in_year": self.clean_decimal(row["duration_in_year"]),
                     "duration_years": self.clean_decimal(row["duration_in_year"]),
+                    "packs_per_year": self.clean_decimal(row["packs_per_year"]),
                     "pack_years": self.clean_decimal(row["packs_per_year"]),
+                    "quit_period": self.clean_decimal(row["quit_period"]),
                     "quit_period_years": self.clean_decimal(row["quit_period"]),
                 },
             ),
@@ -336,9 +499,10 @@ class Command(BaseCommand):
                 try:
                     defaults = builder(row)
                 except PatientHistory.DoesNotExist:
-                    self.skip_row(
+                    self.record_orphan_row(
                         table_name,
-                        row["id"],
+                        row,
+                        "patient_history_id",
                         f"missing patient_history_id {row['patient_history_id']}",
                     )
                     continue
@@ -379,9 +543,10 @@ class Command(BaseCommand):
                 try:
                     defaults = builder(row)
                 except ClinicalObservation.DoesNotExist:
-                    self.skip_row(
+                    self.record_orphan_row(
                         table_name,
-                        row["id"],
+                        row,
+                        "patient_observation_id",
                         f"missing patient_observation_id {row['patient_observation_id']}",
                     )
                     continue
@@ -431,6 +596,7 @@ class Command(BaseCommand):
                 Immunohistochemistry,
                 lambda row: {
                     "observation": self.get_observation(row["patient_observation_id"]),
+                    "date": row["date"],
                     "observed_on": row["date"],
                 },
             ),
@@ -441,9 +607,10 @@ class Command(BaseCommand):
                 try:
                     defaults = builder(row)
                 except ClinicalObservation.DoesNotExist:
-                    self.skip_row(
+                    self.record_orphan_row(
                         table_name,
-                        row["id"],
+                        row,
+                        "patient_observation_id",
                         f"missing patient_observation_id {row['patient_observation_id']}",
                     )
                     continue
@@ -456,12 +623,18 @@ class Command(BaseCommand):
             try:
                 ihc = self.get_ihc(row["ihc_id"])
             except Immunohistochemistry.DoesNotExist:
-                self.skip_row("ihc_details", row["id"], f"missing ihc_id {row['ihc_id']}")
+                self.record_orphan_row(
+                    "ihc_details",
+                    row,
+                    "ihc_id",
+                    f"missing ihc_id {row['ihc_id']}",
+                )
                 continue
             IHCDetail.objects.update_or_create(
                 legacy_id=row["id"],
                 defaults={
                     "ihc": ihc,
+                    "type": row["type"],
                     "marker_type": row["type"],
                     "value": self.clean_str(row["value"]),
                 },
@@ -480,6 +653,7 @@ class Command(BaseCommand):
                     "n": self.clean_str(row["n"]),
                     "m": self.clean_str(row["m"]),
                     "result": self.clean_str(row["result"]),
+                    "date": row["date"],
                     "staged_on": row["date"],
                 },
             ),
@@ -492,6 +666,7 @@ class Command(BaseCommand):
                     "n": self.clean_str(row["n"]),
                     "m": self.clean_str(row["m"]),
                     "result": self.clean_str(row["result"]),
+                    "date": row["date"],
                     "staged_on": row["date"],
                 },
             ),
@@ -504,6 +679,7 @@ class Command(BaseCommand):
                     "pni": self.clean_str(row["pni"]),
                     "margin": self.clean_str(row["margin"]),
                     "ki67": self.clean_str(row["ki67"]),
+                    "date": row["date"],
                     "staged_on": row["date"],
                 },
             ),
@@ -514,9 +690,10 @@ class Command(BaseCommand):
                 try:
                     defaults = builder(row)
                 except ClinicalObservation.DoesNotExist:
-                    self.skip_row(
+                    self.record_orphan_row(
                         table_name,
-                        row["id"],
+                        row,
+                        "patient_observation_id",
                         f"missing patient_observation_id {row['patient_observation_id']}",
                     )
                     continue
@@ -530,9 +707,10 @@ class Command(BaseCommand):
             try:
                 observation = self.get_observation(row["patient_observation_id"])
             except ClinicalObservation.DoesNotExist:
-                self.skip_row(
+                self.record_orphan_row(
                     "patient_observation_details",
-                    row["id"],
+                    row,
+                    "patient_observation_id",
                     f"missing patient_observation_id {row['patient_observation_id']}",
                 )
                 continue
@@ -550,23 +728,38 @@ class Command(BaseCommand):
                     "disease_progression_status_date": row["disease_progression_status_date"],
                     "survival_status": self.clean_str(row["survival_status"]),
                     "survival_status_date": row["survival_status_date"],
+                    "recist_1_target_lasion": self.clean_str(row["recist_1_target_lasion"]),
                     "recist_1_target_lesion": self.clean_str(row["recist_1_target_lasion"]),
+                    "recist_1_non_target_lasion": self.clean_str(row["recist_1_non_target_lasion"]),
                     "recist_1_non_target_lesion": self.clean_str(row["recist_1_non_target_lasion"]),
+                    "recist_1_new_lasion": self.clean_str(row["recist_1_new_lasion"]),
                     "recist_1_new_lesion": self.clean_str(row["recist_1_new_lasion"]),
                     "recist_1_result": self.clean_str(row["recist_1_result"]),
                     "recist_1_date": row["recist_1_date"],
                     "recist_1_method_of_estimation": self.clean_str(row["recist_1_method_of_estimation"]),
+                    "irecist_target_lasion": self.clean_str(row["irecist_target_lasion"]),
                     "irecist_target_lesion": self.clean_str(row["irecist_target_lasion"]),
+                    "irecist_non_target_lasion": self.clean_str(row["irecist_non_target_lasion"]),
                     "irecist_non_target_lesion": self.clean_str(row["irecist_non_target_lasion"]),
+                    "irecist_new_lasion": self.clean_str(row["irecist_new_lasion"]),
                     "irecist_new_lesion": self.clean_str(row["irecist_new_lasion"]),
                     "irecist_result": self.clean_str(row["irecist_result"]),
                     "irecist_date": row["irecist_date"],
                     "irecist_method_of_estimation": self.clean_str(row["irecist_method_of_estimation"]),
+                    "pathological_response_rate_target_lasion": self.clean_str(
+                        row["pathological_response_rate_target_lasion"]
+                    ),
                     "pathological_response_rate_target_lesion": self.clean_str(
                         row["pathological_response_rate_target_lasion"]
                     ),
+                    "pathological_response_rate_non_target_lasion": self.clean_str(
+                        row["pathological_response_rate_non_target_lasion"]
+                    ),
                     "pathological_response_rate_non_target_lesion": self.clean_str(
                         row["pathological_response_rate_non_target_lasion"]
+                    ),
+                    "pathological_response_rate_new_lasion": self.clean_str(
+                        row["pathological_response_rate_new_lasion"]
                     ),
                     "pathological_response_rate_new_lesion": self.clean_str(
                         row["pathological_response_rate_new_lasion"]
@@ -576,6 +769,7 @@ class Command(BaseCommand):
                     ),
                     "pathological_response_rate_date": row["pathological_response_rate_date"],
                     "pathological_method_of_estimation": self.clean_str(row["pathological_method_of_estimation"]),
+                    "pfs": self.clean_str(row["pfs"]),
                     "progression_free_survival": self.clean_str(row["pfs"]),
                     "overall_survival": self.clean_str(row["overall_survival"]),
                 },
@@ -589,6 +783,7 @@ class Command(BaseCommand):
                 TreatmentCycleProgressionSite,
                 lambda row: {
                     "treatment_cycle": self.get_cycle(row["patient_observation_detail_id"]),
+                    "type": row["type"],
                     "site_type": row["type"],
                     "value": row["value"],
                 },
@@ -599,6 +794,7 @@ class Command(BaseCommand):
                 lambda row: {
                     "treatment_cycle": self.get_cycle(row["patient_observation_detail_id"]),
                     "cycle_no": self.clean_decimal(row["cycle_no"]),
+                    "type": row["type"],
                     "protocol_type": row["type"],
                 },
             ),
@@ -653,9 +849,10 @@ class Command(BaseCommand):
                         if "patient_observation_detail_id" in row
                         else "patient_observation_id"
                     )
-                    self.skip_row(
+                    self.record_orphan_row(
                         table_name,
-                        row["id"],
+                        row,
+                        key_name,
                         f"missing {key_name} {row[key_name]}",
                     )
                     continue
@@ -668,9 +865,10 @@ class Command(BaseCommand):
             try:
                 protocol = self.get_protocol(row["chemotherapy_protocol_id"])
             except ChemotherapyProtocol.DoesNotExist:
-                self.skip_row(
+                self.record_orphan_row(
                     "chemotherapy_protocol_details",
-                    row["id"],
+                    row,
+                    "chemotherapy_protocol_id",
                     f"missing chemotherapy_protocol_id {row['chemotherapy_protocol_id']}",
                 )
                 continue
@@ -708,9 +906,10 @@ class Command(BaseCommand):
                 try:
                     defaults = builder(row)
                 except RadiotherapySchedule.DoesNotExist:
-                    self.skip_row(
+                    self.record_orphan_row(
                         table_name,
-                        row["id"],
+                        row,
+                        "radiotherapy_schedule_id",
                         f"missing radiotherapy_schedule_id {row['radiotherapy_schedule_id']}",
                     )
                     continue
@@ -723,7 +922,12 @@ class Command(BaseCommand):
             try:
                 surgery = self.get_surgery(row["surgery_id"])
             except Surgery.DoesNotExist:
-                self.skip_row("surgical_lateralities", row["id"], f"missing surgery_id {row['surgery_id']}")
+                self.record_orphan_row(
+                    "surgical_lateralities",
+                    row,
+                    "surgery_id",
+                    f"missing surgery_id {row['surgery_id']}",
+                )
                 continue
             SurgicalLaterality.objects.update_or_create(
                 legacy_id=row["id"],

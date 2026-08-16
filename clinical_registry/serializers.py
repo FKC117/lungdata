@@ -3,6 +3,7 @@ from datetime import date
 from django.db import transaction
 from rest_framework import serializers
 
+from clinical_registry.access import get_linked_legacy_doctor, user_can_edit_observation, user_can_edit_patient
 from clinical_registry.models import (
     CancerMarker,
     ClinicalObservation,
@@ -11,6 +12,7 @@ from clinical_registry.models import (
     CovidHistory,
     Diagnosis,
     DiagnosisMetastaticSite,
+    DoctorPatient,
     Histopathology,
     IHCDetail,
     Immunohistochemistry,
@@ -29,20 +31,6 @@ from clinical_registry.models import (
     TreatmentCycle,
     TuberculosisHistory,
 )
-
-
-def user_can_edit_owned_record(user, owner):
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser or user.is_staff:
-        return True
-    return owner_id_matches(user.id, owner)
-
-
-def owner_id_matches(user_id, owner):
-    owner_id = getattr(owner, "id", owner)
-    return bool(user_id and owner_id and user_id == owner_id)
-
 
 class SmokingHistorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -264,7 +252,7 @@ class ClinicalObservationSummarySerializer(serializers.ModelSerializer):
     def get_can_edit(self, obj):
         request = self.context.get("request")
         user = getattr(request, "user", None) if request else None
-        return user_can_edit_owned_record(user, obj.created_by)
+        return user_can_edit_observation(user, obj)
 
 
 class ClinicalObservationDetailSerializer(ClinicalObservationSummarySerializer):
@@ -342,7 +330,7 @@ class PatientListSerializer(serializers.ModelSerializer):
     def get_can_edit(self, obj):
         request = self.context.get("request")
         user = getattr(request, "user", None) if request else None
-        return user_can_edit_owned_record(user, obj.created_by)
+        return user_can_edit_patient(user, obj)
 
 
 class PatientDetailSerializer(serializers.ModelSerializer):
@@ -379,7 +367,7 @@ class PatientDetailSerializer(serializers.ModelSerializer):
     def get_can_edit(self, obj):
         request = self.context.get("request")
         user = getattr(request, "user", None) if request else None
-        return user_can_edit_owned_record(user, obj.created_by)
+        return user_can_edit_patient(user, obj)
 
 
 class PatientEntryHistorySerializer(serializers.Serializer):
@@ -600,6 +588,7 @@ class PatientEntrySerializer(serializers.Serializer):
     def create(self, validated_data):
         request = self.context.get("request")
         owner = getattr(request, "user", None) if request and getattr(request, "user", None) and request.user.is_authenticated else None
+        legacy_doctor = get_linked_legacy_doctor(owner)
         history_data = validated_data.pop("history", None)
         smoking_histories = validated_data.pop("smoking_histories", [])
         tb_histories = validated_data.pop("tb_histories", [])
@@ -646,6 +635,7 @@ class PatientEntrySerializer(serializers.Serializer):
 
         observation = ClinicalObservation.objects.create(
             patient=patient,
+            doctor=legacy_doctor,
             observed_at=validated_data.pop("observed_at", None),
             registration_no=patient.registration_no,
             consulting_doctor_name=validated_data.pop("consulting_doctor_name", ""),
@@ -660,6 +650,12 @@ class PatientEntrySerializer(serializers.Serializer):
             is_draft=validated_data.pop("observation_is_draft", False),
             created_by=owner,
         )
+        if legacy_doctor:
+            DoctorPatient.objects.get_or_create(
+                doctor=legacy_doctor,
+                patient=patient,
+                defaults={"legacy_id": None},
+            )
 
         patient_history = None
         if history_data and any(value not in ("", None) for value in history_data.values()):
@@ -738,6 +734,7 @@ class PatientEntrySerializer(serializers.Serializer):
             if request and getattr(request, "user", None) and request.user.is_authenticated
             else None
         )
+        legacy_doctor = get_linked_legacy_doctor(owner)
         observation_id = validated_data.pop("observation_id", None)
         history_data = validated_data.pop("history", None) if "history" in validated_data else None
         smoking_histories = validated_data.pop("smoking_histories", None)
@@ -841,6 +838,7 @@ class PatientEntrySerializer(serializers.Serializer):
         if observation is None and (observation_payload_present or nested_payload_present):
             observation = ClinicalObservation.objects.create(
                 patient=instance,
+                doctor=legacy_doctor,
                 registration_no=instance.registration_no,
                 created_by=owner or instance.created_by,
             )
@@ -855,7 +853,15 @@ class PatientEntrySerializer(serializers.Serializer):
                 setattr(observation, target_field, validated_data.get(field))
             if not observation.created_by:
                 observation.created_by = owner or instance.created_by
+            if legacy_doctor and not observation.doctor_id:
+                observation.doctor = legacy_doctor
             observation.save()
+            if legacy_doctor:
+                DoctorPatient.objects.get_or_create(
+                    doctor=legacy_doctor,
+                    patient=instance,
+                    defaults={"legacy_id": None},
+                )
 
         patient_history = observation.history if observation and hasattr(observation, "history") else None
         history_lists_present = any(
