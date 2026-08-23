@@ -48,7 +48,11 @@ class Command(BaseCommand):
         return value or ""
 
     def clean_timestamp(self, value):
-        return value or timezone.now()
+        if value is None:
+            return timezone.now()
+        if timezone.is_naive(value):
+            return timezone.make_aware(value, timezone.get_current_timezone())
+        return value
 
     def get_center(self, legacy_id):
         return Center.objects.get(legacy_id=legacy_id)

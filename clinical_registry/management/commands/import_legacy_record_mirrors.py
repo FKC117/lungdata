@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.db import connections, transaction
+from django.utils import timezone
 
 from clinical_registry.models import (
     CancerMarkerRecord,
@@ -58,6 +59,14 @@ class Command(BaseCommand):
             for row in cursor.fetchall():
                 yield dict(zip(columns, row))
 
+    def clean_timestamp(self, value):
+        """Preserve legacy timestamps, falling back only when the source is null."""
+        if value is None:
+            return timezone.now()
+        if timezone.is_naive(value):
+            return timezone.make_aware(value, timezone.get_current_timezone())
+        return value
+
     def _truncate_target_data(self):
         for model in [
             ExonRecord,
@@ -113,8 +122,8 @@ class Command(BaseCommand):
                     legacy_id=row["id"],
                     defaults={
                         "name": row["name"],
-                        "created_at": row.get("created_at"),
-                        "updated_at": row.get("updated_at"),
+                        "created_at": self.clean_timestamp(row.get("created_at")),
+                        "updated_at": self.clean_timestamp(row.get("updated_at")),
                     },
                 )
                 count += 1
@@ -184,8 +193,8 @@ class Command(BaseCommand):
             count = 0
             for row in self.legacy_rows(f"SELECT * FROM {table_name} ORDER BY id"):
                 defaults = builder(row)
-                defaults["created_at"] = row.get("created_at")
-                defaults["updated_at"] = row.get("updated_at")
+                defaults["created_at"] = self.clean_timestamp(row.get("created_at"))
+                defaults["updated_at"] = self.clean_timestamp(row.get("updated_at"))
                 model.objects.update_or_create(
                     legacy_id=row["id"],
                     defaults=defaults,
@@ -204,8 +213,8 @@ class Command(BaseCommand):
                 defaults={
                     "diagnosis_disease_group_record": group,
                     "name": row["name"],
-                    "created_at": row.get("created_at"),
-                    "updated_at": row.get("updated_at"),
+                    "created_at": self.clean_timestamp(row.get("created_at")),
+                    "updated_at": self.clean_timestamp(row.get("updated_at")),
                 },
             )
             subgroup_count += 1
@@ -221,8 +230,8 @@ class Command(BaseCommand):
                 defaults={
                     "molecular_pathology_record": molecular_record,
                     "value": row["value"],
-                    "created_at": row.get("created_at"),
-                    "updated_at": row.get("updated_at"),
+                    "created_at": self.clean_timestamp(row.get("created_at")),
+                    "updated_at": self.clean_timestamp(row.get("updated_at")),
                 },
             )
             exon_count += 1

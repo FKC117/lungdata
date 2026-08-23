@@ -68,11 +68,16 @@ class PatientHistorySerializer(serializers.ModelSerializer):
             "id",
             "marital_status",
             "dietary_habit",
+            "height",
             "height_cm",
+            "weight",
             "weight_kg",
             "bmi",
+            "h_o_alcoholism",
             "alcohol_history",
+            "rt_to_chest",
             "radiotherapy_to_chest",
+            "cancer_history",
             "family_cancer_history",
             "known_mutation",
             "first_diagnosis_date",
@@ -236,6 +241,7 @@ class ClinicalObservationSummarySerializer(serializers.ModelSerializer):
             "id",
             "legacy_id",
             "registration_no",
+            "time",
             "observed_at",
             "consulting_doctor_name",
             "center_name",
@@ -243,8 +249,11 @@ class ClinicalObservationSummarySerializer(serializers.ModelSerializer):
             "diagnosis_disease_group",
             "diagnosis_subgroup",
             "diagnosis_primary_site",
+            "diagnosis_laterility",
             "diagnosis_laterality",
             "grade",
+            "laterality",
+            "laterality_notes",
             "is_draft",
             "can_edit",
         )
@@ -373,11 +382,16 @@ class PatientDetailSerializer(serializers.ModelSerializer):
 class PatientEntryHistorySerializer(serializers.Serializer):
     marital_status = serializers.CharField(required=False, allow_blank=True)
     dietary_habit = serializers.CharField(required=False, allow_blank=True)
+    height = serializers.DecimalField(max_digits=6, decimal_places=2, required=False, allow_null=True)
     height_cm = serializers.DecimalField(max_digits=6, decimal_places=2, required=False, allow_null=True)
+    weight = serializers.DecimalField(max_digits=6, decimal_places=2, required=False, allow_null=True)
     weight_kg = serializers.DecimalField(max_digits=6, decimal_places=2, required=False, allow_null=True)
     bmi = serializers.DecimalField(max_digits=6, decimal_places=2, required=False, allow_null=True)
+    h_o_alcoholism = serializers.CharField(required=False, allow_blank=True)
     alcohol_history = serializers.CharField(required=False, allow_blank=True)
+    rt_to_chest = serializers.CharField(required=False, allow_blank=True)
     radiotherapy_to_chest = serializers.CharField(required=False, allow_blank=True)
+    cancer_history = serializers.CharField(required=False, allow_blank=True)
     family_cancer_history = serializers.CharField(required=False, allow_blank=True)
     known_mutation = serializers.CharField(required=False, allow_blank=True)
     first_diagnosis_date = serializers.DateField(required=False, allow_null=True)
@@ -517,6 +531,7 @@ class PatientEntrySerializer(serializers.Serializer):
     patient_type = serializers.CharField(required=False, allow_blank=True)
     patient_is_draft = serializers.BooleanField(required=False, default=False)
 
+    time = serializers.DateTimeField(required=False, allow_null=True)
     observed_at = serializers.DateTimeField(required=False, allow_null=True)
     consulting_doctor_name = serializers.CharField(required=False, allow_blank=True)
     center_name = serializers.CharField(required=False, allow_blank=True)
@@ -524,8 +539,10 @@ class PatientEntrySerializer(serializers.Serializer):
     diagnosis_disease_group = serializers.CharField(required=False, allow_blank=True)
     diagnosis_subgroup = serializers.CharField(required=False, allow_blank=True)
     diagnosis_primary_site = serializers.CharField(required=False, allow_blank=True)
+    diagnosis_laterility = serializers.CharField(required=False, allow_blank=True)
     diagnosis_laterality = serializers.CharField(required=False, allow_blank=True)
     grade = serializers.CharField(required=False, allow_blank=True)
+    laterality = serializers.CharField(required=False, allow_blank=True)
     laterality_notes = serializers.CharField(required=False, allow_blank=True)
     observation_is_draft = serializers.BooleanField(required=False, default=False)
 
@@ -570,7 +587,27 @@ class PatientEntrySerializer(serializers.Serializer):
 
     def validate(self, attrs):
         history_data = attrs.get("history") or {}
-        observed_at = attrs.get("observed_at")
+        self._synchronise_aliases(
+            history_data,
+            (
+                ("height", "height_cm"),
+                ("weight", "weight_kg"),
+                ("h_o_alcoholism", "alcohol_history"),
+                ("rt_to_chest", "radiotherapy_to_chest"),
+                ("cancer_history", "family_cancer_history"),
+            ),
+        )
+        if history_data:
+            attrs["history"] = history_data
+        self._synchronise_aliases(
+            attrs,
+            (
+                ("time", "observed_at"),
+                ("diagnosis_laterility", "diagnosis_laterality"),
+                ("laterality", "laterality_notes"),
+            ),
+        )
+        observed_at = attrs.get("time") or attrs.get("observed_at")
         reference_date = (
             history_data.get("first_diagnosis_date")
             or (observed_at.date() if observed_at else None)
@@ -583,6 +620,20 @@ class PatientEntrySerializer(serializers.Serializer):
         elif age_value is not None and not date_of_birth:
             attrs["date_of_birth"] = self._estimate_date_of_birth(age_value, reference_date)
         return attrs
+
+    def _synchronise_aliases(self, values, aliases):
+        """Mirror transition aliases so canonical legacy columns remain authoritative."""
+        for canonical, alias in aliases:
+            canonical_present = canonical in values
+            alias_present = alias in values
+            if canonical_present and alias_present and values[canonical] != values[alias]:
+                raise serializers.ValidationError({
+                    canonical: f"Must match {alias} when both values are provided."
+                })
+            if canonical_present and not alias_present:
+                values[alias] = values[canonical]
+            elif alias_present and not canonical_present:
+                values[canonical] = values[alias]
 
     @transaction.atomic
     def create(self, validated_data):
@@ -636,6 +687,7 @@ class PatientEntrySerializer(serializers.Serializer):
         observation = ClinicalObservation.objects.create(
             patient=patient,
             doctor=legacy_doctor,
+            time=validated_data.pop("time", None),
             observed_at=validated_data.pop("observed_at", None),
             registration_no=patient.registration_no,
             consulting_doctor_name=validated_data.pop("consulting_doctor_name", ""),
@@ -644,8 +696,10 @@ class PatientEntrySerializer(serializers.Serializer):
             diagnosis_disease_group=validated_data.pop("diagnosis_disease_group", ""),
             diagnosis_subgroup=validated_data.pop("diagnosis_subgroup", ""),
             diagnosis_primary_site=validated_data.pop("diagnosis_primary_site", ""),
+            diagnosis_laterility=validated_data.pop("diagnosis_laterility", ""),
             diagnosis_laterality=validated_data.pop("diagnosis_laterality", ""),
             grade=validated_data.pop("grade", ""),
+            laterality=validated_data.pop("laterality", ""),
             laterality_notes=validated_data.pop("laterality_notes", ""),
             is_draft=validated_data.pop("observation_is_draft", False),
             created_by=owner,
@@ -792,6 +846,7 @@ class PatientEntrySerializer(serializers.Serializer):
         instance.save()
 
         observation_input_fields = {
+            "time",
             "observed_at",
             "consulting_doctor_name",
             "center_name",
@@ -799,8 +854,10 @@ class PatientEntrySerializer(serializers.Serializer):
             "diagnosis_disease_group",
             "diagnosis_subgroup",
             "diagnosis_primary_site",
+            "diagnosis_laterility",
             "diagnosis_laterality",
             "grade",
+            "laterality",
             "laterality_notes",
             "observation_is_draft",
         }
@@ -828,6 +885,14 @@ class PatientEntrySerializer(serializers.Serializer):
             )
         )
         observation_payload_present = any(field in self.initial_data for field in observation_input_fields)
+        provided_observation_fields = set(self.initial_data)
+        for canonical, alias in (
+            ("time", "observed_at"),
+            ("diagnosis_laterility", "diagnosis_laterality"),
+            ("laterality", "laterality_notes"),
+        ):
+            if canonical in self.initial_data or alias in self.initial_data:
+                provided_observation_fields.update((canonical, alias))
 
         observation = None
         if observation_id is not None:
@@ -847,7 +912,7 @@ class PatientEntrySerializer(serializers.Serializer):
             if "registration_no" in self.initial_data:
                 observation.registration_no = instance.registration_no
             for field in observation_input_fields:
-                if field not in self.initial_data:
+                if field not in provided_observation_fields:
                     continue
                 target_field = "is_draft" if field == "observation_is_draft" else field
                 setattr(observation, target_field, validated_data.get(field))
@@ -880,16 +945,21 @@ class PatientEntrySerializer(serializers.Serializer):
                     for field in (
                         "marital_status",
                         "dietary_habit",
+                        "height",
                         "height_cm",
+                        "weight",
                         "weight_kg",
                         "bmi",
+                        "h_o_alcoholism",
                         "alcohol_history",
+                        "rt_to_chest",
                         "radiotherapy_to_chest",
+                        "cancer_history",
                         "family_cancer_history",
                         "known_mutation",
                         "first_diagnosis_date",
                     ):
-                        setattr(patient_history, field, "" if field not in {"height_cm", "weight_kg", "bmi", "first_diagnosis_date"} else None)
+                        setattr(patient_history, field, "" if field not in {"height", "height_cm", "weight", "weight_kg", "bmi", "first_diagnosis_date"} else None)
                 patient_history.save()
 
             if smoking_histories is not None:
