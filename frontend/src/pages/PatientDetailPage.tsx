@@ -28,7 +28,7 @@ import {
   YAxis,
 } from 'recharts'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { fetchPatientDetail } from '../api'
+import { fetchPatientDetail, type TreatmentCycle } from '../api'
 import {
   DataBadge,
   DataPoint,
@@ -106,6 +106,65 @@ function ClinicalCard({
   )
 }
 
+function TreatmentResponseCard({ cycle, index }: { cycle: TreatmentCycle; index: number }) {
+  return (
+    <article className="treatment-response-card">
+      <div className="treatment-response-head">
+        <div>
+          <p className="eyebrow">Treatment cycle {index + 1}</p>
+          <h4>{cycle.current_chemo_protocol || 'Treatment assessment'}</h4>
+        </div>
+        <span className="result-chip">{cycle.chemo_cycle_no ? `Cycle ${cycle.chemo_cycle_no}` : 'Cycle not recorded'}</span>
+      </div>
+
+      <div className="response-assessment-grid">
+        <section>
+          <h5>Clinical outcome</h5>
+          <div className="detail-grid detail-grid-compact">
+            <DataPoint label="Disease progression status" value={cycle.disease_progression_status} />
+            <DataPoint label="Progression status date" value={formatDate(cycle.disease_progression_status_date)} />
+            <DataPoint label="Survival status" value={cycle.survival_status} />
+            <DataPoint label="Survival status date" value={formatDate(cycle.survival_status_date)} />
+          </div>
+        </section>
+        <section>
+          <h5>RECIST 1.1</h5>
+          <div className="detail-grid detail-grid-compact">
+            <DataPoint label="Target lesion" value={cycle.recist_1_target_lesion} />
+            <DataPoint label="Non-target lesion" value={cycle.recist_1_non_target_lesion} />
+            <DataPoint label="New lesion" value={cycle.recist_1_new_lesion} />
+            <DataPoint label="Result" value={cycle.recist_1_result} />
+            <DataPoint label="Assessment date" value={formatDate(cycle.recist_1_date)} />
+            <DataPoint label="Method" value={cycle.recist_1_method_of_estimation} />
+          </div>
+        </section>
+        <section>
+          <h5>iRECIST</h5>
+          <div className="detail-grid detail-grid-compact">
+            <DataPoint label="Target lesion" value={cycle.irecist_target_lesion} />
+            <DataPoint label="Non-target lesion" value={cycle.irecist_non_target_lesion} />
+            <DataPoint label="New lesion" value={cycle.irecist_new_lesion} />
+            <DataPoint label="Result" value={cycle.irecist_result} />
+            <DataPoint label="Assessment date" value={formatDate(cycle.irecist_date)} />
+            <DataPoint label="Method" value={cycle.irecist_method_of_estimation} />
+          </div>
+        </section>
+        <section>
+          <h5>Pathological response rate</h5>
+          <div className="detail-grid detail-grid-compact">
+            <DataPoint label="Target lesion" value={cycle.pathological_response_rate_target_lesion} />
+            <DataPoint label="Non-target lesion" value={cycle.pathological_response_rate_non_target_lesion} />
+            <DataPoint label="New lesion" value={cycle.pathological_response_rate_new_lesion} />
+            <DataPoint label="Result" value={cycle.pathological_response_rate_result} />
+            <DataPoint label="Assessment date" value={formatDate(cycle.pathological_response_rate_date)} />
+            <DataPoint label="Method" value={cycle.pathological_method_of_estimation} />
+          </div>
+        </section>
+      </div>
+    </article>
+  )
+}
+
 export default function PatientDetailPage() {
   const { registryId = '' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -166,6 +225,20 @@ export default function PatientDetailPage() {
   const observationTrend = buildObservationTrend(patient?.observations ?? [])
   const treatmentMix = buildTreatmentMix(patient?.observations ?? [])
   const markerSeries = buildMarkerSeries(patient?.observations ?? [])
+  const markerReadings = useMemo(
+    () =>
+      (patient?.observations ?? []).flatMap((observation) =>
+        observation.cancer_markers.map((marker) =>
+          compactJoin([
+            marker.name,
+            marker.value,
+            marker.unit,
+            marker.observed_on ? formatDate(marker.observed_on) : formatDate(observation.observed_at),
+          ]),
+        ),
+      ),
+    [patient?.observations],
+  )
   const molecularProfile = useMemo(() => {
     const counts = new Map<string, number>()
     filteredObservations.forEach((observation) => {
@@ -210,6 +283,16 @@ export default function PatientDetailPage() {
   const activePathologicalDetail =
     activeObservation?.pathological_staging_details[0]
   const activeIhcPanel = activeObservation?.ihc_panels[0]
+  const responseCycles =
+    activeObservation?.treatment_cycles.filter((cycle) =>
+      [
+        cycle.disease_progression_status,
+        cycle.survival_status,
+        cycle.recist_1_result,
+        cycle.irecist_result,
+        cycle.pathological_response_rate_result,
+      ].some(Boolean),
+    ) ?? []
   const comparisonHighlights = [
     {
       label: 'Observation date',
@@ -599,6 +682,35 @@ export default function PatientDetailPage() {
           <span className="data-pill">{patient.phone || 'No phone'}</span>
         </div>
       </section>
+
+      <ClinicalCard
+        id="history"
+        eyebrow="Clinical context"
+        title="Treatment decision context"
+        icon={<ClipboardList size={19} />}
+        count={activeHistory ? 1 : 0}
+        hasData={Boolean(activeHistory)}
+        defaultOpen
+        emptyMessage="No linked clinical-context record was imported for the selected observation."
+      >
+        {activeHistory ? (
+          <div className="detail-grid">
+            <DataPoint label="Date of first diagnosis" value={formatDate(activeHistory.first_diagnosis_date)} />
+            <DataPoint label="Smoking status" value={activeHistory.smoking_histories[0]?.status} />
+            <DataPoint label="TB history" value={activeHistory.tb_histories[0]?.status} />
+            <DataPoint label="Covid history" value={activeHistory.covid_histories[0]?.status} />
+            <DataPoint label="Marital status" value={activeHistory.marital_status} />
+            <DataPoint label="Alcohol history" value={activeHistory.alcohol_history} />
+            <DataPoint label="Chest RT history" value={activeHistory.radiotherapy_to_chest} />
+            <DataPoint label="Family cancer history" value={activeHistory.family_cancer_history} />
+            <DataPoint label="Known mutation" value={activeHistory.known_mutation} />
+            <DataPoint label="Height" value={formatMeasure(activeHistory.height_cm, 'cm')} />
+            <DataPoint label="Weight" value={formatMeasure(activeHistory.weight_kg, 'kg')} />
+            <DataPoint label="BMI" value={activeHistory.bmi} />
+            <DataPoint label="Dietary habit" value={activeHistory.dietary_habit} />
+          </div>
+        ) : null}
+      </ClinicalCard>
 
       <section className="panel detail-toolbar-panel">
         <div className="detail-toolbar">
@@ -1363,42 +1475,19 @@ export default function PatientDetailPage() {
         </ClinicalCard>
 
         <ClinicalCard
-          id="history"
-          eyebrow="History"
-          title="Personal and family background"
-          icon={<ClipboardList size={19} />}
-          count={activeHistory ? 1 : 0}
-          hasData={Boolean(activeHistory)}
-          emptyMessage="No linked history was imported for the selected observation."
+          id="response-outcomes"
+          eyebrow="Response and outcomes"
+          title="Treatment response assessment"
+          icon={<Activity size={19} />}
+          count={responseCycles.length}
+          hasData={responseCycles.length > 0}
+          emptyMessage="No disease progression, survival, RECIST, iRECIST, or pathological response assessment is recorded."
         >
-          {activeHistory ? (
-            <div className="detail-grid">
-              <DataPoint label="Marital status" value={activeHistory.marital_status} />
-              <DataPoint label="Dietary habit" value={activeHistory.dietary_habit} />
-              <DataPoint label="Height" value={formatMeasure(activeHistory.height_cm, 'cm')} />
-              <DataPoint label="Weight" value={formatMeasure(activeHistory.weight_kg, 'kg')} />
-              <DataPoint label="BMI" value={activeHistory.bmi} />
-              <DataPoint label="Alcohol history" value={activeHistory.alcohol_history} />
-              <DataPoint
-                label="Chest RT history"
-                value={activeHistory.radiotherapy_to_chest}
-              />
-              <DataPoint
-                label="Family cancer history"
-                value={activeHistory.family_cancer_history}
-              />
-              <DataPoint label="Known mutation" value={activeHistory.known_mutation} />
-              <DataPoint
-                label="Smoking status"
-                value={activeHistory.smoking_histories[0]?.status}
-              />
-              <DataPoint label="TB history" value={activeHistory.tb_histories[0]?.status} />
-              <DataPoint
-                label="Covid history"
-                value={activeHistory.covid_histories[0]?.status}
-              />
-            </div>
-          ) : null}
+          <div className="response-card-stack">
+            {responseCycles.map((cycle, index) => (
+              <TreatmentResponseCard key={cycle.id} cycle={cycle} index={index} />
+            ))}
+          </div>
         </ClinicalCard>
 
         <ClinicalCard
@@ -1609,36 +1698,40 @@ export default function PatientDetailPage() {
       <section className="panel" id="marker-trend">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Marker Trend</p>
-            <h3>Cancer marker values across observations</h3>
+            <p className="eyebrow">Cancer markers</p>
+            <h3>{markerSeries.length ? 'Marker-specific longitudinal trends' : 'Baseline marker measurements'}</h3>
           </div>
         </div>
-        <div className="chart-box">
-          {markerSeries.length ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={markerSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#d5e1eb" />
-                <XAxis dataKey="label" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#f97316"
-                  strokeWidth={3}
-                  dot={{ r: 4 }}
-                  name="Marker value"
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyState
-              title="No marker series available"
-              detail="As more canonical observations arrive, marker trend lines will become available here."
-            />
-          )}
-        </div>
+        <p className="entry-inline-note">
+          {markerSeries.length
+            ? 'Each chart represents one marker and one unit.'
+            : 'Each marker currently has one dated result. A trend chart will appear after a second result for the same marker.'}
+        </p>
+        {markerSeries.length ? (
+          <div className="marker-chart-grid">
+            {markerSeries.map((series) => (
+              <div key={`${series.name}-${series.unit}`} className="chart-box marker-chart-box">
+                <p className="list-panel-title">{series.name}{series.unit ? ` (${series.unit})` : ''}</p>
+                <ResponsiveContainer width="100%" height={250}>
+                  <LineChart data={series.points}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#4b6a84" opacity={0.35} />
+                    <XAxis dataKey="label" />
+                    <YAxis />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="value" stroke="#16c7b0" strokeWidth={3} dot={{ r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ))}
+          </div>
+        ) : markerReadings.length ? (
+          <ListPanel title="Recorded markers" items={markerReadings} />
+        ) : (
+          <EmptyState
+            title="No marker data recorded"
+            detail="Marker values will appear here when they are added to an observation."
+          />
+        )}
       </section>
 
       <section className="panel panel-compact" id="observation-timeline">

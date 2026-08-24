@@ -185,12 +185,35 @@ html[data-theme] .clinical-card-chevron { color: var(--accent); }
 html[data-theme] .clinical-card-state,
 html[data-theme] .clinical-card-empty-copy { color: var(--muted); }
 html[data-theme] .clinical-card-body { border-color: var(--border); }
+html[data-theme] .response-card-stack { display: grid; gap: 0.75rem; padding-top: 0.9rem; }
+html[data-theme] .treatment-response-card {
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-muted);
+}
+html[data-theme] .treatment-response-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+html[data-theme] .treatment-response-head .eyebrow { margin-bottom: 0.25rem; font-size: 0.68rem; }
+html[data-theme] .treatment-response-head h4 { margin: 0; color: var(--text); font-size: 0.95rem; }
+html[data-theme] .response-assessment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; padding-top: 0.8rem; }
+html[data-theme] .response-assessment-grid section { padding: 0.75rem; border: 1px solid var(--border); border-radius: 12px; }
+html[data-theme] .response-assessment-grid h5 { margin: 0; color: var(--accent); font-size: 0.76rem; letter-spacing: 0.08em; text-transform: uppercase; }
+html[data-theme] .response-assessment-grid .detail-grid { padding-top: 0.4rem; }
 html[data-theme] .molecular-chart {
   padding: 0.8rem;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface-muted);
 }
+html[data-theme] .marker-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.85rem; margin-top: 0.85rem; }
+html[data-theme] .marker-chart-box { min-height: 0; }
 html[data-theme='dark'] .recharts-cartesian-axis-tick-value { fill: var(--muted); }
 html[data-theme='dark'] .recharts-tooltip-wrapper .recharts-default-tooltip {
   border-color: var(--border) !important;
@@ -232,4 +255,6 @@ html[data-theme='dark'] .recharts-tooltip-wrapper .recharts-default-tooltip {
 
 @media (max-width: 760px) {
   .theme-toggle { width: 3.8rem; }
+  html[data-theme] .response-assessment-grid { grid-template-columns: 1fr; }
+  html[data-theme] .marker-chart-grid { grid-template-columns: 1fr; }
 }

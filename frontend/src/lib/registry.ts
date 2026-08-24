@@ -37,18 +37,32 @@ export function buildTreatmentMix(observations: ClinicalObservation[]) {
 }
 
 export function buildMarkerSeries(observations: ClinicalObservation[]) {
-  const points = observations
-    .flatMap((observation) =>
-      observation.cancer_markers.map((marker) => ({
-        label: marker.observed_on
-          ? formatDate(marker.observed_on)
-          : formatDateTime(observation.observed_at),
-        value: Number(marker.value),
-      })),
-    )
-    .filter((point) => Number.isFinite(point.value))
+  const seriesByMarker = new Map<
+    string,
+    { name: string; unit: string; points: Array<{ label: string; value: number; date: string }> }
+  >()
 
-  return points
+  observations.forEach((observation) => {
+    observation.cancer_markers.forEach((marker) => {
+      const value = Number(marker.value)
+      const date = marker.observed_on || observation.observed_at
+      if (!marker.name || !date || !Number.isFinite(value)) {
+        return
+      }
+      const unit = marker.unit || ''
+      const key = `${marker.name}::${unit}`
+      const series = seriesByMarker.get(key) ?? { name: marker.name, unit, points: [] }
+      series.points.push({ label: formatDate(date), value, date })
+      seriesByMarker.set(key, series)
+    })
+  })
+
+  return [...seriesByMarker.values()]
+    .map((series) => ({
+      ...series,
+      points: series.points.sort((left, right) => left.date.localeCompare(right.date)),
+    }))
+    .filter((series) => series.points.length >= 2)
 }
 
 export function joinValues(values: Array<string | null | undefined>) {

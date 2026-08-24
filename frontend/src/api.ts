@@ -270,12 +270,24 @@ export interface TreatmentCycle {
   disease_progression_status_date: string | null
   survival_status: string | null
   survival_status_date: string | null
+  recist_1_target_lesion: string | null
+  recist_1_non_target_lesion: string | null
+  recist_1_new_lesion: string | null
   recist_1_result: string | null
   recist_1_date: string | null
+  recist_1_method_of_estimation: string | null
+  irecist_target_lesion: string | null
+  irecist_non_target_lesion: string | null
+  irecist_new_lesion: string | null
   irecist_result: string | null
   irecist_date: string | null
+  irecist_method_of_estimation: string | null
+  pathological_response_rate_target_lesion: string | null
+  pathological_response_rate_non_target_lesion: string | null
+  pathological_response_rate_new_lesion: string | null
   pathological_response_rate_result: string | null
   pathological_response_rate_date: string | null
+  pathological_method_of_estimation: string | null
   progression_free_survival: string | null
   overall_survival: string | null
   chemotherapy_protocols: ChemotherapyProtocol[]
