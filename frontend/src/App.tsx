@@ -1,4 +1,5 @@
-import { Suspense, lazy, useEffect } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
+import { Moon, Sun } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   NavLink,
@@ -9,6 +10,7 @@ import {
   useNavigate,
 } from 'react-router-dom'
 import './App.css'
+import './themes.css'
 import { fetchCurrentUser, logoutUser, type ApiError, type AuthUser } from './api'
 import { LoadingState } from './components/registry-ui'
 
@@ -45,11 +47,15 @@ function AppHeader({
   role,
   onLogout,
   isLoggingOut,
+  theme,
+  onToggleTheme,
 }: {
   fullName: string
   role: 'admin' | 'doctor' | 'user'
   onLogout: () => void
   isLoggingOut: boolean
+  theme: 'light' | 'dark'
+  onToggleTheme: () => void
 }) {
   return (
     <header className="topbar">
@@ -105,6 +111,17 @@ function AppHeader({
             {isLoggingOut ? 'Signing out...' : 'Logout'}
           </button>
         </div>
+        <button
+          type="button"
+          className={theme === 'dark' ? 'theme-toggle theme-toggle-dark' : 'theme-toggle'}
+          onClick={onToggleTheme}
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        >
+          <Sun size={14} aria-hidden="true" />
+          <span className="theme-toggle-thumb">{theme === 'dark' ? <Moon size={13} /> : null}</span>
+          <Moon size={14} aria-hidden="true" />
+        </button>
       </div>
     </header>
   )
@@ -131,6 +148,14 @@ function App() {
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    () => (window.localStorage.getItem('lung-registry-theme') === 'dark' ? 'dark' : 'light'),
+  )
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    window.localStorage.setItem('lung-registry-theme', theme)
+  }, [theme])
   const authQuery = useQuery({
     queryKey: ['auth-user'],
     queryFn: fetchCurrentUser,
@@ -171,6 +196,8 @@ function App() {
           role={user?.role || 'user'}
           onLogout={() => logoutMutation.mutate()}
           isLoggingOut={logoutMutation.isPending}
+          theme={theme}
+          onToggleTheme={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
         />
       ) : null}
       <main className="page-frame">

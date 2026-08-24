@@ -1,6 +1,17 @@
-import { useMemo } from 'react'
+import { type ReactNode, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Download, FileText, Printer } from 'lucide-react'
+import {
+  Activity,
+  ArrowLeft,
+  ChevronDown,
+  ClipboardList,
+  Dna,
+  Download,
+  FileText,
+  HeartPulse,
+  Printer,
+  UserRound,
+} from 'lucide-react'
 import {
   Area,
   AreaChart,
@@ -52,6 +63,47 @@ function stageScore(value: string | null | undefined) {
   }
   const numeric = Number(normalized.replace(/[^0-9.]/g, ''))
   return Number.isFinite(numeric) ? numeric : 0
+}
+
+function ClinicalCard({
+  id,
+  eyebrow,
+  title,
+  icon,
+  count,
+  hasData,
+  defaultOpen = false,
+  emptyMessage,
+  children,
+}: {
+  id: string
+  eyebrow: string
+  title: string
+  icon: ReactNode
+  count?: number
+  hasData: boolean
+  defaultOpen?: boolean
+  emptyMessage: string
+  children: ReactNode
+}) {
+  return (
+    <details className={hasData ? 'clinical-card clinical-card-populated' : 'clinical-card'} id={id} open={defaultOpen}>
+      <summary>
+        <span className="clinical-card-icon">{icon}</span>
+        <span className="clinical-card-title">
+          <small>{eyebrow}</small>
+          <strong>{title}</strong>
+        </span>
+        <span className={hasData ? 'clinical-card-state clinical-card-state-live' : 'clinical-card-state'}>
+          {hasData ? `${count ?? 1} recorded` : 'No data'}
+        </span>
+        <ChevronDown className="clinical-card-chevron" size={18} aria-hidden="true" />
+      </summary>
+      <div className="clinical-card-body">
+        {hasData ? children : <p className="clinical-card-empty-copy">{emptyMessage}</p>}
+      </div>
+    </details>
+  )
 }
 
 export default function PatientDetailPage() {
@@ -114,6 +166,19 @@ export default function PatientDetailPage() {
   const observationTrend = buildObservationTrend(patient?.observations ?? [])
   const treatmentMix = buildTreatmentMix(patient?.observations ?? [])
   const markerSeries = buildMarkerSeries(patient?.observations ?? [])
+  const molecularProfile = useMemo(() => {
+    const counts = new Map<string, number>()
+    filteredObservations.forEach((observation) => {
+      observation.molecular_pathologies.forEach((item) => {
+        const label = item.gene || item.method || item.status || 'Unspecified'
+        counts.set(label, (counts.get(label) ?? 0) + 1)
+      })
+    })
+    return [...counts.entries()]
+      .map(([label, value]) => ({ label, value }))
+      .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label))
+      .slice(0, 8)
+  }, [filteredObservations])
   const stagingTrend = useMemo(
     () =>
       filteredObservations.map((observation, index) => ({
@@ -1231,17 +1296,18 @@ export default function PatientDetailPage() {
         </article>
       </section>
 
-      <section className="panel" id="clinical-snapshot">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Clinical Snapshot</p>
-            <h3>Selected observation</h3>
-          </div>
-          <span className="result-chip">
-            {patient.observations.length} observations total
-          </span>
-        </div>
-        {activeObservation ? (
+      <section className="clinical-card-grid" aria-label="Clinical record">
+        <ClinicalCard
+          id="clinical-snapshot"
+          eyebrow="Clinical snapshot"
+          title="Selected observation"
+          icon={<HeartPulse size={19} />}
+          count={patient.observations.length}
+          hasData={Boolean(activeObservation)}
+          defaultOpen
+          emptyMessage="This patient has no imported clinical observations yet."
+        >
+          {activeObservation ? (
           <div className="detail-grid">
             <DataPoint
               label="Observed at"
@@ -1267,22 +1333,18 @@ export default function PatientDetailPage() {
             />
             <DataPoint label="Grade" value={activeObservation.grade} />
           </div>
-        ) : (
-          <EmptyState
-            title="No observations"
-            detail="This patient exists in the registry but does not yet have imported clinical observations."
-          />
-        )}
-      </section>
+          ) : null}
+        </ClinicalCard>
 
-      <section className="insight-grid insight-grid-dense">
-        <article className="panel" id="demography">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Demography</p>
-              <h3>Core patient profile</h3>
-            </div>
-          </div>
+        <ClinicalCard
+          id="demography"
+          eyebrow="Demography"
+          title="Core patient profile"
+          icon={<UserRound size={19} />}
+          count={[patient.phone, patient.date_of_birth, patient.district].filter(Boolean).length}
+          hasData={Boolean(patient.phone || patient.email || patient.nid || patient.date_of_birth || patient.district)}
+          emptyMessage="No demographic detail has been recorded for this patient."
+        >
           <div className="detail-grid">
             <DataPoint label="Phone" value={patient.phone} />
             <DataPoint label="Email" value={patient.email} />
@@ -1298,15 +1360,17 @@ export default function PatientDetailPage() {
             />
             <DataPoint label="Patient type" value={patient.patient_type} />
           </div>
-        </article>
+        </ClinicalCard>
 
-        <article className="panel" id="history">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">History</p>
-              <h3>Selected observation background</h3>
-            </div>
-          </div>
+        <ClinicalCard
+          id="history"
+          eyebrow="History"
+          title="Personal and family background"
+          icon={<ClipboardList size={19} />}
+          count={activeHistory ? 1 : 0}
+          hasData={Boolean(activeHistory)}
+          emptyMessage="No linked history was imported for the selected observation."
+        >
           {activeHistory ? (
             <div className="detail-grid">
               <DataPoint label="Marital status" value={activeHistory.marital_status} />
@@ -1334,30 +1398,26 @@ export default function PatientDetailPage() {
                 value={activeHistory.covid_histories[0]?.status}
               />
             </div>
-          ) : (
-            <EmptyState
-              title="No history imported"
-              detail="This observation does not yet have an attached canonical history record."
-            />
-          )}
-        </article>
-      </section>
+          ) : null}
+        </ClinicalCard>
 
-      <section className="insight-grid insight-grid-dense">
-        <article className="panel panel-compact" id="diagnosis">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Diagnosis</p>
-              <h3>Selected disease framing</h3>
-            </div>
-          </div>
+        <ClinicalCard
+          id="diagnosis"
+          eyebrow="Diagnosis"
+          title="Disease framing"
+          icon={<Activity size={19} />}
+          count={(activeObservation?.diagnoses.length ?? 0) + (activeObservation?.metastatic_sites.length ?? 0)}
+          hasData={Boolean(activeObservation?.diagnosis_disease_group || activeObservation?.diagnoses.length)}
+          defaultOpen
+          emptyMessage="No diagnosis is available for the selected observation."
+        >
           {activeObservation ? (
             <div className="stack-grid stack-grid-compact">
               <div className="badge-row badge-row-compact">
                 <DataBadge label="Group" value={activeObservation.diagnosis_disease_group} />
                 <DataBadge label="Subgroup" value={activeObservation.diagnosis_subgroup} />
                 <DataBadge label="Site" value={activeObservation.diagnosis_primary_site} />
-                <DataBadge label="Laterality" value={activeObservation.diagnosis_laterality} />
+                <DataBadge label="Diagnosis laterality" value={activeObservation.diagnosis_laterality} />
               </div>
               <ListPanel
                 title="Diagnosis details"
@@ -1372,21 +1432,18 @@ export default function PatientDetailPage() {
                 items={activeObservation.comorbidities.map((item) => item.detail)}
               />
             </div>
-          ) : (
-            <EmptyState
-              title="No diagnosis available"
-              detail="The patient does not yet have an imported observation payload."
-            />
-          )}
-        </article>
+          ) : null}
+        </ClinicalCard>
 
-        <article className="panel panel-compact" id="staging">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Staging</p>
-              <h3>Clinical and pathological status</h3>
-            </div>
-          </div>
+        <ClinicalCard
+          id="staging"
+          eyebrow="Staging"
+          title="Clinical and pathological status"
+          icon={<ClipboardList size={19} />}
+          count={(activeClinicalStage ? 1 : 0) + (activePathologicalStage ? 1 : 0)}
+          hasData={Boolean(activeClinicalStage || activePathologicalStage || activePathologicalDetail)}
+          emptyMessage="No staging record is attached to this observation."
+        >
           {activeObservation ? (
             <div className="detail-grid detail-grid-compact">
               <DataPoint
@@ -1415,35 +1472,29 @@ export default function PatientDetailPage() {
               <DataPoint label="Margin" value={activePathologicalDetail?.margin} />
               <DataPoint label="Ki67" value={activePathologicalDetail?.ki67} />
             </div>
-          ) : (
-            <EmptyState
-              title="No staging available"
-              detail="No staging record is attached to the current observation."
-            />
-          )}
-        </article>
-      </section>
+          ) : null}
+        </ClinicalCard>
 
-      <section className="insight-grid insight-grid-dense">
-        <article className="panel panel-compact" id="pathology">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Pathology</p>
-              <h3>Histopathology and molecular workup</h3>
-            </div>
-          </div>
+        <ClinicalCard
+          id="pathology"
+          eyebrow="Pathology"
+          title="Histopathology and molecular workup"
+          icon={<Dna size={19} />}
+          count={(activeObservation?.histopathologies.length ?? 0) + (activeIhcPanel?.details.length ?? 0)}
+          hasData={Boolean(activeObservation?.histopathologies.length || activeIhcPanel?.details.length)}
+          emptyMessage="No pathology workup is available for this observation."
+        >
           {activeObservation ? (
             <div className="stack-grid stack-grid-compact">
               <ListPanel
                 title="Histopathology"
                 items={activeObservation.histopathologies.map((item) =>
-                  compactJoin([item.detail, item.site, item.histology_type]),
-                )}
-              />
-              <ListPanel
-                title="Molecular pathology"
-                items={activeObservation.molecular_pathologies.map((item) =>
-                  compactJoin([item.method, item.gene, item.exon, item.status]),
+                  compactJoin([
+                    item.detail,
+                    item.site,
+                    item.histology_type,
+                    item.observed_on ? `Date: ${formatDate(item.observed_on)}` : null,
+                  ]),
                 )}
               />
               <ListPanel
@@ -1455,21 +1506,60 @@ export default function PatientDetailPage() {
                 }
               />
             </div>
-          ) : (
-            <EmptyState
-              title="No pathology available"
-              detail="Pathology records will appear here when present in the imported observation."
-            />
-          )}
-        </article>
+          ) : null}
+        </ClinicalCard>
 
-        <article className="panel panel-compact" id="treatment">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Treatment</p>
-              <h3>Selected treatment footprint</h3>
-            </div>
+        <ClinicalCard
+          id="molecular-pathology"
+          eyebrow="Molecular pathology"
+          title="Gene and biomarker profile"
+          icon={<Dna size={19} />}
+          count={activeObservation?.molecular_pathologies.length ?? 0}
+          hasData={Boolean(activeObservation?.molecular_pathologies.length || molecularProfile.length)}
+          emptyMessage="No molecular pathology result is available for this observation."
+        >
+          <div className="stack-grid stack-grid-compact">
+            <ListPanel
+              title="Selected observation results"
+              items={
+                activeObservation?.molecular_pathologies.map((item) =>
+                  compactJoin([
+                    item.method,
+                    item.gene,
+                    item.exon,
+                    item.specimen,
+                    item.status,
+                    item.observed_on ? `Date: ${formatDate(item.observed_on)}` : null,
+                  ]),
+                ) ?? []
+              }
+            />
+            {molecularProfile.length ? (
+              <div className="molecular-chart">
+                <p className="list-panel-title">Recorded molecular activity</p>
+                <ResponsiveContainer width="100%" height={210}>
+                  <BarChart data={molecularProfile} margin={{ top: 8, right: 8, left: -18, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.22} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Bar dataKey="value" name="Records" fill="#16c7b0" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : null}
           </div>
+        </ClinicalCard>
+
+        <ClinicalCard
+          id="treatment"
+          eyebrow="Treatment"
+          title="Treatment footprint"
+          icon={<HeartPulse size={19} />}
+          count={(activeObservation?.treatment_cycles.length ?? 0) + (activeObservation?.radiotherapy_schedules.length ?? 0) + (activeObservation?.surgeries.length ?? 0)}
+          hasData={Boolean(activeObservation?.treatment_cycles.length || activeObservation?.radiotherapy_schedules.length || activeObservation?.surgeries.length)}
+          emptyMessage="No treatment records are available for this observation."
+        >
           {activeObservation ? (
             <div className="stack-grid stack-grid-compact">
               <ListPanel
@@ -1505,13 +1595,8 @@ export default function PatientDetailPage() {
                 )}
               />
             </div>
-          ) : (
-            <EmptyState
-              title="No treatment available"
-              detail="Treatment records will appear here when present in the imported observation."
-            />
-          )}
-        </article>
+          ) : null}
+        </ClinicalCard>
       </section>
 
       <section className="panel" id="marker-trend">
@@ -1587,6 +1672,10 @@ export default function PatientDetailPage() {
                   value={observation.diagnosis_primary_site}
                 />
                 <DataPoint
+                  label="Diagnosis laterality"
+                  value={observation.diagnosis_laterality}
+                />
+                <DataPoint
                   label="Subgroup"
                   value={observation.diagnosis_subgroup}
                 />
@@ -1609,10 +1698,26 @@ export default function PatientDetailPage() {
                   )}
                 />
                 <DataPoint
+                  label="Histopathology date"
+                  value={joinValues(
+                    observation.histopathologies.map((item) =>
+                      item.observed_on ? formatDate(item.observed_on) : null,
+                    ),
+                  )}
+                />
+                <DataPoint
                   label="Molecular pathology"
                   value={joinValues(
                     observation.molecular_pathologies.map(
                       (item) => item.status || item.gene,
+                    ),
+                  )}
+                />
+                <DataPoint
+                  label="Molecular pathology date"
+                  value={joinValues(
+                    observation.molecular_pathologies.map((item) =>
+                      item.observed_on ? formatDate(item.observed_on) : null,
                     ),
                   )}
                 />

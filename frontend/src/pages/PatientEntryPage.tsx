@@ -1,11 +1,12 @@
-import { type Dispatch, type FormEvent, type SetStateAction, useEffect, useState } from 'react'
+import { type Dispatch, type FormEvent, type SetStateAction, useDeferredValue, useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Plus, Search, Trash2 } from 'lucide-react'
 import {
   createPatientEntry,
   fetchPatientDemographics,
   fetchPatientDetail,
+  fetchPatients,
   type ApiError,
   type PatientDetail,
   type PatientEntryPayload,
@@ -198,6 +199,67 @@ function formatDateInput(value: Date) {
   return `${year}-${month}-${day}`
 }
 
+function formatDisplayDate(value: string) {
+  const [year, month, day] = value.split('-')
+  return year && month && day ? `${day}/${month}/${year}` : ''
+}
+
+function parseDisplayDate(value: string) {
+  const match = value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (!match) {
+    return null
+  }
+  const [, dayValue, monthValue, year] = match
+  const day = Number(dayValue)
+  const month = Number(monthValue)
+  const date = new Date(Number(year), month - 1, day)
+  if (
+    date.getFullYear() !== Number(year) ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null
+  }
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+function DateField({
+  value,
+  onChange,
+  readOnly = false,
+}: {
+  value: string
+  onChange?: (value: string) => void
+  readOnly?: boolean
+}) {
+  const [displayValue, setDisplayValue] = useState(() => formatDisplayDate(value))
+
+  useEffect(() => {
+    setDisplayValue(formatDisplayDate(value))
+  }, [value])
+
+  return (
+    <input
+      className="auth-input"
+      inputMode="numeric"
+      placeholder="DD/MM/YYYY"
+      value={displayValue}
+      readOnly={readOnly}
+      onChange={(event) => {
+        const nextValue = event.target.value
+        setDisplayValue(nextValue)
+        const parsed = parseDisplayDate(nextValue)
+        if (parsed) {
+          onChange?.(parsed)
+        } else if (!nextValue) {
+          onChange?.('')
+        }
+      }}
+      onBlur={() => setDisplayValue(formatDisplayDate(value))}
+    />
+  )
+}
+
 function formatDateTimeLocal(value: string | null | undefined) {
   if (!value) {
     return ''
@@ -333,6 +395,15 @@ export default function PatientEntryPage() {
     queryFn: () => fetchPatientDemographics(patient.district, observation.diagnosis_disease_group),
   })
   const demographics = demographicsQuery.data
+  const duplicateLookupTerm =
+    patient.registration_no.trim() || patient.phone.trim() || patient.name.trim()
+  const deferredDuplicateLookupTerm = useDeferredValue(duplicateLookupTerm)
+  const duplicateLookupQuery = useQuery({
+    queryKey: ['entry-duplicate-check', deferredDuplicateLookupTerm],
+    queryFn: () => fetchPatients(deferredDuplicateLookupTerm, 1, 6),
+    enabled: !isEditMode && deferredDuplicateLookupTerm.length >= 3,
+  })
+  const duplicateMatches = duplicateLookupQuery.data?.results ?? []
   const ageReferenceDate = history.first_diagnosis_date || dateOnly(observation.observed_at) || formatDateInput(new Date())
   const ageAtDiagnosis =
     patient.date_of_birth && history.first_diagnosis_date
@@ -890,7 +961,49 @@ export default function PatientEntryPage() {
       <form className="entry-layout" onSubmit={handleSubmit}>
         {activeStep === 0 ? (
           <>
-            <section className="panel">
+            {!isEditMode ? (
+              <section className="entry-record-check" aria-live="polite">
+                <div className="entry-record-check-copy">
+                  <span className="entry-record-check-icon"><Search size={18} /></span>
+                  <div>
+                    <p className="eyebrow">Existing record check</p>
+                    <h3>Check before creating a new record</h3>
+                    <p>
+                      Paste a registration number, mobile number, or patient name above. We will search the
+                      canonical registry automatically.
+                    </p>
+                  </div>
+                </div>
+                {deferredDuplicateLookupTerm.length >= 3 ? (
+                  <div className="entry-match-area">
+                    {duplicateLookupQuery.isLoading ? <span className="entry-lookup-status">Searching registry...</span> : null}
+                    {!duplicateLookupQuery.isLoading && duplicateMatches.length === 0 ? (
+                      <span className="entry-lookup-status entry-lookup-clear">No matching record found. You can continue.</span>
+                    ) : null}
+                    {duplicateMatches.length ? (
+                      <div className="entry-match-list">
+                        {duplicateMatches.map((match) => (
+                          <Link key={match.registry_id} className="entry-match" to={`/patients/${match.registry_id}`}>
+                            <span>
+                              <strong>{match.name || 'Unnamed patient'}</strong>
+                              <small>{match.registration_no || match.legacy_unique_id || match.registry_id}</small>
+                            </span>
+                            <span className="entry-match-meta">
+                              {match.phone || 'No phone'}
+                              <ExternalLink size={15} />
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="entry-lookup-status">Start with at least 3 characters in one of the lookup fields.</span>
+                )}
+              </section>
+            ) : null}
+
+            <section className="panel entry-block entry-block-demography">
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">Patient Demography</p>
@@ -943,11 +1056,9 @@ export default function PatientEntryPage() {
                   <>
                     <label className="filter-field">
                       <span>Date of Birth</span>
-                      <input
-                        className="auth-input"
-                        type="date"
+                      <DateField
                         value={patient.date_of_birth}
-                        onChange={(event) => handleDateOfBirthChange(event.target.value)}
+                        onChange={handleDateOfBirthChange}
                       />
                     </label>
                     <label className="filter-field">
@@ -974,9 +1085,7 @@ export default function PatientEntryPage() {
                     </label>
                     <label className="filter-field">
                       <span>Estimated Date of Birth</span>
-                      <input
-                        className="auth-input"
-                        type="date"
+                      <DateField
                         value={patient.date_of_birth}
                         readOnly
                       />
@@ -1102,7 +1211,7 @@ export default function PatientEntryPage() {
               </div>
             </section>
 
-            <section className="panel panel-compact">
+            <section className="panel panel-compact entry-block entry-block-history">
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">History</p>
@@ -1205,13 +1314,9 @@ export default function PatientEntryPage() {
                 </label>
                 <label className="filter-field">
                   <span>Date of 1st Diagnosis</span>
-                  <input
-                    className="auth-input"
-                    type="date"
+                  <DateField
                     value={history.first_diagnosis_date}
-                    onChange={(event) =>
-                      updateObjectField(setHistory, 'first_diagnosis_date', event.target.value)
-                    }
+                    onChange={(value) => updateObjectField(setHistory, 'first_diagnosis_date', value)}
                   />
                 </label>
                 <label className="filter-field">
@@ -1230,7 +1335,7 @@ export default function PatientEntryPage() {
               </div>
             </section>
 
-            <section className="panel panel-compact">
+            <section className="panel panel-compact entry-block entry-block-exposure">
               <div className="panel-heading">
                 <h3>Smoking History</h3>
                 <button
@@ -1419,13 +1524,9 @@ export default function PatientEntryPage() {
                         </label>
                         <label className="filter-field">
                           <span>Date</span>
-                          <input
-                            className="auth-input"
-                            type="date"
+                          <DateField
                             value={item.date}
-                            onChange={(event) =>
-                              updateArrayItem(setCovidHistories, index, 'date', event.target.value)
-                            }
+                            onChange={(value) => updateArrayItem(setCovidHistories, index, 'date', value)}
                           />
                         </label>
                         <label className="filter-field">
@@ -1856,12 +1957,10 @@ export default function PatientEntryPage() {
                       <div className="entry-grid">
                         <label className="filter-field">
                           <span>Observed On</span>
-                          <input
-                            className="auth-input"
-                            type="date"
+                          <DateField
                             value={panel.observed_on}
-                            onChange={(event) =>
-                              updateArrayItem(setIhcPanels, panelIndex, 'observed_on', event.target.value)
+                            onChange={(value) =>
+                              updateArrayItem(setIhcPanels, panelIndex, 'observed_on', value)
                             }
                           />
                         </label>
@@ -2073,13 +2172,9 @@ export default function PatientEntryPage() {
                       </label>
                       <label className="filter-field">
                         <span>Date</span>
-                        <input
-                          className="auth-input"
-                          type="date"
+                        <DateField
                           value={item.date}
-                          onChange={(event) =>
-                            updateArrayItem(setPastTreatments, index, 'date', event.target.value)
-                          }
+                          onChange={(value) => updateArrayItem(setPastTreatments, index, 'date', value)}
                         />
                       </label>
                     </div>
@@ -2266,12 +2361,10 @@ export default function PatientEntryPage() {
                       <div className="entry-grid">
                         <label className="filter-field">
                           <span>Surgery Date</span>
-                          <input
-                            className="auth-input"
-                            type="date"
+                          <DateField
                             value={item.surgery_date}
-                            onChange={(event) =>
-                              updateArrayItem(setSurgeries, index, 'surgery_date', event.target.value)
+                            onChange={(value) =>
+                              updateArrayItem(setSurgeries, index, 'surgery_date', value)
                             }
                           />
                         </label>
