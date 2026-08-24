@@ -34,6 +34,7 @@ from clinical_registry.models import (
     GenderOption,
     HistopathologyOption,
     IhcMarkerOption,
+    LegacyImportAnomaly,
     MaritalStatusOption,
     MolecularPathologyOption,
     Patient,
@@ -550,4 +551,71 @@ class PatientCreateAPIView(APIView):
                 "name": patient.name,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+class LegacyUnlinkedHistoryAPIView(APIView):
+    """Admin-only review queue for legacy history chains without an observation parent."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not user_is_admin(request.user):
+            return Response(
+                {"detail": "Only registry administrators can review legacy import anomalies."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            page = max(int(request.GET.get("page", 1)), 1)
+            per_page = min(max(int(request.GET.get("per_page", 25)), 1), 100)
+        except ValueError:
+            return Response({"detail": "page and per_page must be integers."}, status=status.HTTP_400_BAD_REQUEST)
+
+        resolution_status = (request.GET.get("status") or "open").strip().lower()
+        if resolution_status not in dict(LegacyImportAnomaly.ResolutionStatus.choices):
+            return Response({"detail": "Invalid anomaly status."}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = LegacyImportAnomaly.objects.filter(
+            source_table="patient_histories",
+            resolution_status=resolution_status,
+        ).order_by("missing_reference_id", "legacy_row_id")
+        query = (request.GET.get("q") or "").strip()
+        if query:
+            try:
+                legacy_id = int(query)
+            except ValueError:
+                queryset = queryset.none()
+            else:
+                queryset = queryset.filter(
+                    Q(legacy_row_id=legacy_id) | Q(missing_reference_id=legacy_id)
+                )
+
+        count = queryset.count()
+        start = (page - 1) * per_page
+        anomalies = queryset[start : start + per_page]
+        results = []
+        for anomaly in anomalies:
+            payload = anomaly.payload or {}
+            results.append(
+                {
+                    "legacy_history_id": anomaly.legacy_row_id,
+                    "missing_observation_id": anomaly.missing_reference_id,
+                    "marital_status": payload.get("marital_status") or "",
+                    "first_diagnosis_date": payload.get("first_diagnosis_date"),
+                    "created_at": payload.get("created_at"),
+                    "updated_at": payload.get("updated_at"),
+                    "resolution_status": anomaly.resolution_status,
+                }
+            )
+
+        return Response(
+            {
+                "count": count,
+                "page": page,
+                "per_page": per_page,
+                "next": page + 1 if start + per_page < count else None,
+                "previous": page - 1 if page > 1 else None,
+                "results": results,
+            }
         )

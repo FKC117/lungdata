@@ -1,0 +1,269 @@
+Duplicate legacy unique IDs detected in source data:
+  BSBSC-250000023 -> 2 rows
+  BSBSC-260000121 -> 2 rows
+  BSBSC-260000188 -> 2 rows
+Imported patients: 615
+Imported observations: 740
+Imported patient histories: 739
+Imported smoking_histories: 8
+Imported tb_histories: 87
+Imported covid_histories: 137
+Imported diagnoses: 644
+Imported diagnosis_metastatic_sites: 1026
+Imported comorbidities: 746
+Imported histopathologies: 626
+Imported molecular_pathologies: 337
+Imported cancer_markers: 493
+Imported ihcs: 363
+Imported ihc_details: 5182
+Imported staging_clinicals: 286
+Imported staging_pathologicals: 45
+Imported staging_pathological_details: 13
+Imported patient_observation_details: 540
+Imported patient_observation_response_rate_progression_sites: 33
+Imported chemotherapy_protocols: 567
+Imported chemotherapy_modalities: 490
+Imported past_treatment_histories: 7
+Imported radiotherapy_schedules: 95
+Imported surgeries: 59
+Imported chemotherapy_protocol_details: 861
+Imported radiotherapy_schedule_sites: 83
+Imported radiotherapy_schedule_modalities: 5
+Imported surgical_lateralities: 1
+Skipped orphaned legacy rows summary:
+  patient_histories: 78 skipped
+    row 10: missing patient_observation_id 10
+    row 11: missing patient_observation_id 11
+    row 12: missing patient_observation_id 12
+    row 13: missing patient_observation_id 13
+    row 14: missing patient_observation_id 14
+    row 15: missing patient_observation_id 15
+    row 16: missing patient_observation_id 16
+    row 17: missing patient_observation_id 17
+    row 18: missing patient_observation_id 18
+    row 19: missing patient_observation_id 19
+    ... 68 more
+  smoking_histories: 3 skipped
+    row 5: missing patient_history_id 24
+    row 6: missing patient_history_id 25
+    row 7: missing patient_history_id 26
+  tb_histories: 2 skipped
+    row 36: missing patient_history_id 103
+    row 37: missing patient_history_id 104
+  covid_histories: 1 skipped
+    row 36: missing patient_history_id 154
+  diagnoses: 53 skipped
+    row 4: missing patient_observation_id 16
+    row 5: missing patient_observation_id 17
+    row 6: missing patient_observation_id 18
+    row 7: missing patient_observation_id 19
+    row 9: missing patient_observation_id 25
+    row 10: missing patient_observation_id 26
+    row 15: missing patient_observation_id 62
+    row 16: missing patient_observation_id 63
+    row 18: missing patient_observation_id 76
+    row 19: missing patient_observation_id 77
+    ... 43 more
+  diagnosis_metastatic_sites: 94 skipped
+    row 4: missing patient_observation_id 16
+    row 5: missing patient_observation_id 16
+    row 6: missing patient_observation_id 16
+    row 7: missing patient_observation_id 17
+    row 8: missing patient_observation_id 17
+    row 9: missing patient_observation_id 17
+    row 10: missing patient_observation_id 18
+    row 11: missing patient_observation_id 18
+    row 12: missing patient_observation_id 18
+    row 13: missing patient_observation_id 19
+    ... 84 more
+  comorbidities: 75 skipped
+    row 11: missing patient_observation_id 16
+    row 12: missing patient_observation_id 16
+    row 13: missing patient_observation_id 16
+    row 14: missing patient_observation_id 17
+    row 15: missing patient_observation_id 17
+    row 16: missing patient_observation_id 17
+    row 17: missing patient_observation_id 18
+    row 18: missing patient_observation_id 18
+    row 19: missing patient_observation_id 18
+    row 20: missing patient_observation_id 19
+    ... 65 more
+  histopathologies: 55 skipped
+    row 5: missing patient_observation_id 0
+    row 12: missing patient_observation_id 16
+    row 13: missing patient_observation_id 17
+    row 14: missing patient_observation_id 18
+    row 15: missing patient_observation_id 19
+    row 26: missing patient_observation_id 62
+    row 27: missing patient_observation_id 63
+    row 30: missing patient_observation_id 76
+    row 31: missing patient_observation_id 77
+    row 32: missing patient_observation_id 78
+    ... 45 more
+  molecular_pathologies: 33 skipped
+    row 11: missing patient_observation_id 16
+    row 12: missing patient_observation_id 17
+    row 13: missing patient_observation_id 18
+    row 14: missing patient_observation_id 19
+    row 20: missing patient_observation_id 62
+    row 21: missing patient_observation_id 62
+    row 22: missing patient_observation_id 62
+    row 23: missing patient_observation_id 63
+    row 24: missing patient_observation_id 63
+    row 25: missing patient_observation_id 63
+    ... 23 more
+  cancer_markers: 49 skipped
+    row 12: missing patient_observation_id 16
+    row 13: missing patient_observation_id 17
+    row 14: missing patient_observation_id 18
+    row 15: missing patient_observation_id 19
+    row 18: missing patient_observation_id 26
+    row 35: missing patient_observation_id 62
+    row 36: missing patient_observation_id 63
+    row 39: missing patient_observation_id 76
+    row 40: missing patient_observation_id 77
+    row 41: missing patient_observation_id 78
+    ... 39 more
+  ihcs: 37 skipped
+    row 7: missing patient_observation_id 25
+    row 8: missing patient_observation_id 26
+    row 63: missing patient_observation_id 63
+    row 66: missing patient_observation_id 76
+    row 67: missing patient_observation_id 77
+    row 68: missing patient_observation_id 78
+    row 69: missing patient_observation_id 79
+    row 70: missing patient_observation_id 80
+    row 75: missing patient_observation_id 92
+    row 76: missing patient_observation_id 93
+    ... 27 more
+  ihc_details: 487 skipped
+    row 55: missing ihc_id 7
+    row 56: missing ihc_id 7
+    row 57: missing ihc_id 7
+    row 58: missing ihc_id 7
+    row 59: missing ihc_id 7
+    row 60: missing ihc_id 7
+    row 61: missing ihc_id 7
+    row 62: missing ihc_id 7
+    row 63: missing ihc_id 7
+    row 64: missing ihc_id 8
+    ... 477 more
+  staging_clinicals: 29 skipped
+    row 6: missing patient_observation_id 16
+    row 7: missing patient_observation_id 17
+    row 8: missing patient_observation_id 18
+    row 9: missing patient_observation_id 19
+    row 11: missing patient_observation_id 25
+    row 12: missing patient_observation_id 26
+    row 17: missing patient_observation_id 62
+    row 18: missing patient_observation_id 63
+    row 21: missing patient_observation_id 76
+    row 22: missing patient_observation_id 77
+    ... 19 more
+  staging_pathologicals: 8 skipped
+    row 4: missing patient_observation_id 62
+    row 5: missing patient_observation_id 63
+    row 7: missing patient_observation_id 78
+    row 8: missing patient_observation_id 87
+    row 9: missing patient_observation_id 88
+    row 10: missing patient_observation_id 92
+    row 11: missing patient_observation_id 93
+    row 18: missing patient_observation_id 214
+  staging_pathological_details: 9 skipped
+    row 5: missing patient_observation_id 104
+    row 7: missing patient_observation_id 107
+    row 8: missing patient_observation_id 108
+    row 9: missing patient_observation_id 109
+    row 10: missing patient_observation_id 110
+    row 11: missing patient_observation_id 111
+    row 12: missing patient_observation_id 112
+    row 13: missing patient_observation_id 113
+    row 15: missing patient_observation_id 134
+  patient_observation_details: 66 skipped
+    row 6: missing patient_observation_id 16
+    row 7: missing patient_observation_id 17
+    row 8: missing patient_observation_id 18
+    row 9: missing patient_observation_id 19
+    row 90: missing patient_observation_id 62
+    row 91: missing patient_observation_id 63
+    row 95: missing patient_observation_id 80
+    row 96: missing patient_observation_id 80
+    row 97: missing patient_observation_id 80
+    row 98: missing patient_observation_id 80
+    ... 56 more
+  patient_observation_response_rate_progression_sites: 3 skipped
+    row 2: missing patient_observation_detail_id 90
+    row 4: missing patient_observation_detail_id 98
+    row 5: missing patient_observation_detail_id 98
+  chemotherapy_protocols: 72 skipped
+    row 7: missing patient_observation_detail_id 6
+    row 8: missing patient_observation_detail_id 7
+    row 9: missing patient_observation_detail_id 8
+    row 10: missing patient_observation_detail_id 9
+    row 106: missing patient_observation_detail_id 90
+    row 107: missing patient_observation_detail_id 91
+    row 113: missing patient_observation_detail_id 95
+    row 114: missing patient_observation_detail_id 95
+    row 115: missing patient_observation_detail_id 96
+    row 116: missing patient_observation_detail_id 96
+    ... 62 more
+  chemotherapy_modalities: 48 skipped
+    row 2: missing patient_observation_detail_id 6
+    row 3: missing patient_observation_detail_id 7
+    row 4: missing patient_observation_detail_id 8
+    row 5: missing patient_observation_detail_id 9
+    row 86: missing patient_observation_detail_id 90
+    row 87: missing patient_observation_detail_id 91
+    row 89: missing patient_observation_detail_id 95
+    row 90: missing patient_observation_detail_id 96
+    row 91: missing patient_observation_detail_id 97
+    row 92: missing patient_observation_detail_id 98
+    ... 38 more
+  radiotherapy_schedules: 18 skipped
+    row 4: missing patient_observation_id 76
+    row 5: missing patient_observation_id 77
+    row 6: missing patient_observation_id 78
+    row 7: missing patient_observation_id 79
+    row 8: missing patient_observation_id 80
+    row 9: missing patient_observation_id 85
+    row 11: missing patient_observation_id 88
+    row 12: missing patient_observation_id 92
+    row 13: missing patient_observation_id 93
+    row 16: missing patient_observation_id 112
+    ... 8 more
+  surgeries: 4 skipped
+    row 4: missing patient_observation_id 62
+    row 5: missing patient_observation_id 63
+    row 7: missing patient_observation_id 88
+    row 13: missing patient_observation_id 134
+  chemotherapy_protocol_details: 103 skipped
+    row 10: missing chemotherapy_protocol_id 7
+    row 11: missing chemotherapy_protocol_id 7
+    row 12: missing chemotherapy_protocol_id 8
+    row 13: missing chemotherapy_protocol_id 8
+    row 14: missing chemotherapy_protocol_id 9
+    row 15: missing chemotherapy_protocol_id 9
+    row 16: missing chemotherapy_protocol_id 10
+    row 17: missing chemotherapy_protocol_id 10
+    row 155: missing chemotherapy_protocol_id 106
+    row 156: missing chemotherapy_protocol_id 106
+    ... 93 more
+  radiotherapy_schedule_sites: 14 skipped
+    row 3: missing radiotherapy_schedule_id 4
+    row 4: missing radiotherapy_schedule_id 5
+    row 5: missing radiotherapy_schedule_id 9
+    row 7: missing radiotherapy_schedule_id 11
+    row 8: missing radiotherapy_schedule_id 12
+    row 9: missing radiotherapy_schedule_id 13
+    row 12: missing radiotherapy_schedule_id 19
+    row 14: missing radiotherapy_schedule_id 21
+    row 17: missing radiotherapy_schedule_id 24
+    row 18: missing radiotherapy_schedule_id 25
+    ... 4 more
+  radiotherapy_schedule_modalities: 5 skipped
+    row 2: missing radiotherapy_schedule_id 4
+    row 3: missing radiotherapy_schedule_id 5
+    row 4: missing radiotherapy_schedule_id 13
+    row 7: missing radiotherapy_schedule_id 19
+    row 9: missing radiotherapy_schedule_id 21
+Legacy clinical import completed successfully.

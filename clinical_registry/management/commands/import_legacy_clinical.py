@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import connections, transaction
 from django.utils import timezone
 
@@ -54,10 +54,26 @@ class Command(BaseCommand):
             default="skip",
             help="How to handle legacy child rows whose parent observation/history/protocol does not exist.",
         )
+        parser.add_argument(
+            "--source-db",
+            choices=["legacy", "recent"],
+            default="legacy",
+            help="Configured source database alias to import from.",
+        )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Run the full import inside a transaction, then roll it back.",
+        )
 
     def handle(self, *args, **options):
         self.skipped_counts = {}
         self.orphan_mode = options["orphan_mode"]
+        self.source_database = options["source_db"]
+        self.dry_run = options["dry_run"]
+
+        if self.dry_run and options["truncate"]:
+            raise CommandError("--dry-run cannot be combined with --truncate.")
 
         if options["truncate"]:
             self._truncate_target_data()
@@ -78,9 +94,14 @@ class Command(BaseCommand):
             self.import_pathology_related()
             self.import_staging_related()
             self.import_treatment_related()
+            if self.dry_run:
+                transaction.set_rollback(True)
 
         self.print_skip_summary()
-        self.stdout.write(self.style.SUCCESS("Legacy clinical import completed successfully."))
+        if self.dry_run:
+            self.stdout.write(self.style.WARNING("Clinical import dry-run completed; all changes were rolled back."))
+        else:
+            self.stdout.write(self.style.SUCCESS("Legacy clinical import completed successfully."))
 
     def audit_orphan_chains(self):
         self.report_duplicate_legacy_unique_ids()
@@ -182,7 +203,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"Audited {table_name}: {count} unresolved rows"))
 
     def legacy_rows(self, query):
-        with connections["legacy"].cursor() as cursor:
+        with connections[self.source_database].cursor() as cursor:
             cursor.execute(query)
             columns = [col[0] for col in cursor.description]
             for row in cursor.fetchall():

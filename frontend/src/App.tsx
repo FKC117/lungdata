@@ -16,6 +16,7 @@ const PatientSearchPage = lazy(() => import('./pages/PatientSearchPage'))
 const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'))
 const PatientEntryPage = lazy(() => import('./pages/PatientEntryPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
+const LegacyDraftReviewPage = lazy(() => import('./pages/LegacyDraftReviewPage'))
 
 function routeAuthenticatedUser(user: AuthUser, navigate: ReturnType<typeof useNavigate>) {
   if (user.default_redirect.startsWith('/admin')) {
@@ -75,6 +76,16 @@ function AppHeader({
             New Entry
           </NavLink>
           {role === 'admin' ? (
+            <NavLink
+              to="/legacy-review"
+              className={({ isActive }) =>
+                isActive ? 'topnav-link topnav-link-active' : 'topnav-link'
+              }
+            >
+              Legacy Review
+            </NavLink>
+          ) : null}
+          {role === 'admin' ? (
             <a className="topnav-link" href="/admin/">
               Django Admin
             </a>
@@ -99,7 +110,7 @@ function AppHeader({
   )
 }
 
-function ProtectedRoutes() {
+function ProtectedRoutes({ role }: { role: AuthUser['role'] }) {
   return (
     <Routes>
       <Route index element={<Navigate to="/patients" replace />} />
@@ -107,6 +118,10 @@ function ProtectedRoutes() {
       <Route path="patients/:registryId/edit" element={<PatientEntryPage />} />
       <Route path="patients" element={<PatientSearchPage />} />
       <Route path="patients/:registryId" element={<PatientDetailPage />} />
+      <Route
+        path="legacy-review"
+        element={role === 'admin' ? <LegacyDraftReviewPage /> : <Navigate to="/patients" replace />}
+      />
       <Route path="*" element={<Navigate to="/patients" replace />} />
     </Routes>
   )
@@ -187,7 +202,7 @@ function App() {
                     state={{ from: { pathname: location.pathname } }}
                   />
                 ) : (
-                  <ProtectedRoutes />
+                  <ProtectedRoutes role={user.role} />
                 )
               }
             />

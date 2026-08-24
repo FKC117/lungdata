@@ -50,6 +50,25 @@ export interface PatientListResponse {
   results: Patient[]
 }
 
+export interface LegacyUnlinkedHistory {
+  legacy_history_id: number
+  missing_observation_id: number
+  marital_status: string
+  first_diagnosis_date: string | null
+  created_at: string | null
+  updated_at: string | null
+  resolution_status: 'open' | 'reviewed' | 'resolved'
+}
+
+export interface LegacyUnlinkedHistoryResponse {
+  count: number
+  page: number
+  per_page: number
+  next: number | null
+  previous: number | null
+  results: LegacyUnlinkedHistory[]
+}
+
 export interface Patient {
   id: number
   legacy_id: number | null
@@ -563,6 +582,16 @@ export function fetchPatients(
 
 export function fetchPatientDetail(registryId: string) {
   return request<PatientDetail>(`/api/patients/${registryId}/`)
+}
+
+export function fetchLegacyUnlinkedHistories(query = '', page = 1, status = 'open') {
+  const params = new URLSearchParams({ page: String(page), per_page: '25', status })
+  if (query) {
+    params.set('q', query)
+  }
+  return request<LegacyUnlinkedHistoryResponse>(
+    `/api/legacy-review/unlinked-histories/?${params.toString()}`,
+  )
 }
 
 export function createPatientEntry(payload: PatientEntryPayload) {

@@ -107,6 +107,17 @@ DATABASES = {
             "charset": "utf8mb4",
         },
     },
+    "recent": {
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": os.environ.get("RECENT_DB_NAME", "lung_recent"),
+        "USER": os.environ.get("RECENT_DB_USER", os.environ.get("DB_USER", "root")),
+        "PASSWORD": os.environ.get("RECENT_DB_PASSWORD", os.environ.get("DB_PASSWORD", "")),
+        "HOST": os.environ.get("RECENT_DB_HOST", os.environ.get("DB_HOST", "127.0.0.1")),
+        "PORT": int(os.environ.get("RECENT_DB_PORT", os.environ.get("DB_PORT", "3306"))),
+        "OPTIONS": {
+            "charset": "utf8mb4",
+        },
+    },
 }
 
 AUTH_PASSWORD_VALIDATORS = [

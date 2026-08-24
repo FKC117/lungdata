@@ -1,0 +1,9 @@
+{
+  "source_delete_events": 440,
+  "unique_complete_rows": 440,
+  "field_counts": {
+    "16": 440
+  },
+  "observation_id_min": 284,
+  "observation_id_max": 757
+}
