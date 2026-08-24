@@ -6,6 +6,8 @@ from rest_framework import serializers
 from clinical_registry.access import get_linked_legacy_doctor, user_can_edit_observation, user_can_edit_patient
 from clinical_registry.models import (
     CancerMarker,
+    ChemotherapyModality,
+    ChemotherapyProtocol,
     ClinicalObservation,
     ClinicalStaging,
     Comorbidity,
@@ -200,7 +202,22 @@ class SurgerySerializer(serializers.ModelSerializer):
         fields = ("id", "surgery_date", "modality", "lateralities")
 
 
+class ChemotherapyProtocolSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChemotherapyProtocol
+        fields = ("id", "cycle_no", "protocol_type")
+
+
+class ChemotherapyModalitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChemotherapyModality
+        fields = ("id", "detail")
+
+
 class TreatmentCycleSerializer(serializers.ModelSerializer):
+    chemotherapy_protocols = ChemotherapyProtocolSerializer(many=True, read_only=True)
+    chemotherapy_modalities = ChemotherapyModalitySerializer(many=True, read_only=True)
+
     class Meta:
         model = TreatmentCycle
         fields = (
@@ -223,6 +240,8 @@ class TreatmentCycleSerializer(serializers.ModelSerializer):
             "pathological_response_rate_date",
             "progression_free_survival",
             "overall_survival",
+            "chemotherapy_protocols",
+            "chemotherapy_modalities",
         )
 
 

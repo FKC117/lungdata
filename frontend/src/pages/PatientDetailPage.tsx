@@ -1564,14 +1564,21 @@ export default function PatientDetailPage() {
             <div className="stack-grid stack-grid-compact">
               <ListPanel
                 title="Treatment cycles"
-                items={activeObservation.treatment_cycles.map((cycle) =>
-                  compactJoin([
+                items={activeObservation.treatment_cycles.map((cycle) => {
+                  const protocolCycle = cycle.chemotherapy_protocols
+                    .map((protocol) => protocol.cycle_no)
+                    .find((value) => value !== null && value !== undefined)
+                  const cycleNumber = protocolCycle ?? cycle.chemo_cycle_no
+                  return compactJoin([
+                    joinValues(cycle.chemotherapy_modalities.map((modality) => modality.detail)),
                     cycle.current_chemo_protocol,
-                    cycle.chemo_cycle_no ? `Cycle ${cycle.chemo_cycle_no}` : null,
+                    cycleNumber !== null && cycleNumber !== undefined && cycleNumber !== ''
+                      ? `Cycle ${String(cycleNumber).replace(/\.00$/, '')}`
+                      : null,
                     cycle.line_of_treatment,
-                    cycle.disease_progression_status,
-                  ]),
-                )}
+                    cycle.chemo_starting_date ? `Started ${formatDate(cycle.chemo_starting_date)}` : null,
+                  ])
+                })}
               />
               <ListPanel
                 title="Radiotherapy schedules"

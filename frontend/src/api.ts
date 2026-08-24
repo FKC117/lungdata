@@ -278,6 +278,19 @@ export interface TreatmentCycle {
   pathological_response_rate_date: string | null
   progression_free_survival: string | null
   overall_survival: string | null
+  chemotherapy_protocols: ChemotherapyProtocol[]
+  chemotherapy_modalities: ChemotherapyModality[]
+}
+
+export interface ChemotherapyProtocol {
+  id: number
+  cycle_no: string | number | null
+  protocol_type: string | null
+}
+
+export interface ChemotherapyModality {
+  id: number
+  detail: string | null
 }
 
 export interface PastTreatmentHistory {
