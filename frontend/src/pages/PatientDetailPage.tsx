@@ -51,6 +51,17 @@ function stageScore(value: string | null | undefined) {
   return Number.isFinite(numeric) ? numeric : 0
 }
 
+function molecularResultCategory(status: string | null | undefined) {
+  const normalized = status?.toLowerCase() ?? ''
+  if (normalized.includes('negative') || normalized.includes('not detected') || normalized.includes('wild type')) {
+    return { label: 'Negative / not detected', color: '#64748b' }
+  }
+  if (normalized.includes('positive') || normalized.includes('detected') || normalized.includes('mutated')) {
+    return { label: 'Detected / positive', color: '#f59e0b' }
+  }
+  return { label: 'Result recorded', color: '#38bdf8' }
+}
+
 function ClinicalCard({
   id,
   eyebrow,
@@ -58,7 +69,7 @@ function ClinicalCard({
   icon,
   count,
   hasData,
-  defaultOpen = false,
+  defaultOpen,
   emptyMessage,
   children,
 }: {
@@ -73,7 +84,11 @@ function ClinicalCard({
   children: ReactNode
 }) {
   return (
-    <details className={hasData ? 'clinical-card clinical-card-populated' : 'clinical-card'} id={id} open={defaultOpen}>
+    <details
+      className={hasData ? 'clinical-card clinical-card-populated' : 'clinical-card'}
+      id={id}
+      open={defaultOpen ?? hasData}
+    >
       <summary>
         <span className="clinical-card-icon">{icon}</span>
         <span className="clinical-card-title">
@@ -229,19 +244,19 @@ export default function PatientDetailPage() {
     })
     return [...groups.entries()].map(([unit, readings]) => ({ unit, readings }))
   }, [activeObservation])
-  const molecularProfile = useMemo(() => {
-    const counts = new Map<string, number>()
-    filteredObservations.forEach((observation) => {
-      observation.molecular_pathologies.forEach((item) => {
-        const label = item.gene || item.method || item.status || 'Unspecified'
-        counts.set(label, (counts.get(label) ?? 0) + 1)
-      })
-    })
-    return [...counts.entries()]
-      .map(([label, value]) => ({ label, value }))
-      .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label))
-      .slice(0, 8)
-  }, [filteredObservations])
+  const activeMolecularResults = useMemo(
+    () =>
+      (activeObservation?.molecular_pathologies ?? []).map((item, index) => {
+        const category = molecularResultCategory(item.status)
+        return {
+          label: item.gene || item.method || `Assay ${index + 1}`,
+          category,
+          detail: compactJoin([item.method, item.exon, item.status, item.specimen]),
+          observedOn: item.observed_on ? formatDate(item.observed_on) : '',
+        }
+      }),
+    [activeObservation],
+  )
   const stagingTrend = useMemo(
     () =>
       filteredObservations.map((observation, index) => ({
@@ -807,7 +822,7 @@ export default function PatientDetailPage() {
         )}
       </section>
 
-      <section className="panel">
+      <section className="panel" hidden={filteredObservations.length < 2}>
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Observation Compare</p>
@@ -1548,7 +1563,7 @@ export default function PatientDetailPage() {
           title="Gene and biomarker profile"
           icon={<Dna size={19} />}
           count={activeObservation?.molecular_pathologies.length ?? 0}
-          hasData={Boolean(activeObservation?.molecular_pathologies.length || molecularProfile.length)}
+          hasData={Boolean(activeMolecularResults.length)}
           emptyMessage="No molecular pathology result is available for this observation."
         >
           <div className="stack-grid stack-grid-compact">
@@ -1567,14 +1582,56 @@ export default function PatientDetailPage() {
                 ) ?? []
               }
             />
-            {molecularProfile.length ? (
+            {activeMolecularResults.length ? (
               <div className="molecular-chart">
-                <p className="list-panel-title">Recorded molecular activity</p>
+                <p className="list-panel-title">Molecular test result matrix</p>
                 <ClinicalChart height={210} option={{
-                  tooltip: { trigger: 'axis' }, grid: { left: 34, right: 12, top: 12, bottom: 38 },
-                  xAxis: { type: 'category', data: molecularProfile.map((entry) => entry.label), axisLabel: { fontSize: 11 } },
-                  yAxis: { type: 'value', minInterval: 1 },
-                  series: [{ name: 'Records', type: 'bar', data: molecularProfile.map((entry) => entry.value), itemStyle: { color: '#16c7b0', borderRadius: [6, 6, 0, 0] } }],
+                  tooltip: {
+                    trigger: 'item',
+                    formatter: (params) => {
+                      const point = Array.isArray(params) ? params[0] : params
+                      const result = activeMolecularResults[point.dataIndex]
+                      return [
+                        `<strong>${result.label}</strong>`,
+                        result.category.label,
+                        result.detail,
+                        result.observedOn ? `Date: ${result.observedOn}` : '',
+                      ].filter(Boolean).join('<br/>')
+                    },
+                  },
+                  grid: { left: 18, right: 18, top: 34, bottom: 48 },
+                  xAxis: {
+                    type: 'category',
+                    data: activeMolecularResults.map((entry) => entry.label),
+                    axisLabel: { fontSize: 11, interval: 0 },
+                    axisTick: { show: false },
+                    axisLine: { show: false },
+                  },
+                  yAxis: { type: 'category', data: ['Result'], show: false },
+                  visualMap: {
+                    type: 'piecewise',
+                    orient: 'horizontal',
+                    left: 'center',
+                    bottom: 0,
+                    itemWidth: 12,
+                    itemHeight: 12,
+                    textStyle: { fontSize: 11 },
+                    pieces: [
+                      { value: 0, label: 'Detected / positive', color: '#f59e0b' },
+                      { value: 1, label: 'Negative / not detected', color: '#64748b' },
+                      { value: 2, label: 'Result recorded', color: '#38bdf8' },
+                    ],
+                  },
+                  series: [{
+                    type: 'heatmap',
+                    data: activeMolecularResults.map((entry, index) => [
+                      index,
+                      0,
+                      entry.category.label === 'Detected / positive' ? 0 : entry.category.label === 'Negative / not detected' ? 1 : 2,
+                    ]),
+                    label: { show: true, formatter: (params: { dataIndex: number }) => activeMolecularResults[params.dataIndex].category.label.replace(' / ', '\n/ '), fontSize: 11 },
+                    itemStyle: { borderColor: 'transparent', borderRadius: 10 },
+                  }],
                 }} />
               </div>
             ) : null}

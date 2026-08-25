@@ -455,7 +455,12 @@ export default function PatientSearchPage() {
                     <Fragment key={patient.registry_id}>
                       <tr
                         className="registry-row"
-                        onClick={() => navigate(`/patients/${patient.registry_id}`)}
+                        onClick={() => {
+                          if (window.getSelection()?.toString()) {
+                            return
+                          }
+                          navigate(`/patients/${patient.registry_id}`)
+                        }}
                       >
                         <td>
                           <div className="table-patient">

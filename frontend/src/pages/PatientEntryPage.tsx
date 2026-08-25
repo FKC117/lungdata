@@ -1,7 +1,7 @@
-import { type Dispatch, type FormEvent, type SetStateAction, useDeferredValue, useEffect, useState } from 'react'
+import { type Dispatch, type FormEvent, type SetStateAction, useDeferredValue, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Plus, Search, Trash2 } from 'lucide-react'
 import {
   createPatientEntry,
   fetchPatientDemographics,
@@ -233,30 +233,73 @@ function DateField({
   readOnly?: boolean
 }) {
   const [displayValue, setDisplayValue] = useState(() => formatDisplayDate(value))
+  const pickerRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setDisplayValue(formatDisplayDate(value))
   }, [value])
 
   return (
-    <input
-      className="auth-input"
-      inputMode="numeric"
-      placeholder="DD/MM/YYYY"
-      value={displayValue}
-      readOnly={readOnly}
-      onChange={(event) => {
-        const nextValue = event.target.value
-        setDisplayValue(nextValue)
-        const parsed = parseDisplayDate(nextValue)
-        if (parsed) {
-          onChange?.(parsed)
-        } else if (!nextValue) {
-          onChange?.('')
-        }
-      }}
-      onBlur={() => setDisplayValue(formatDisplayDate(value))}
-    />
+    <div className="date-field-control">
+      <input
+        className="auth-input"
+        inputMode="numeric"
+        placeholder="DD/MM/YYYY"
+        value={displayValue}
+        readOnly={readOnly}
+        onChange={(event) => {
+          const nextValue = event.target.value
+          setDisplayValue(nextValue)
+          const parsed = parseDisplayDate(nextValue)
+          if (parsed) {
+            onChange?.(parsed)
+          } else if (!nextValue) {
+            onChange?.('')
+          }
+        }}
+        onBlur={() => setDisplayValue(formatDisplayDate(value))}
+      />
+      {!readOnly ? (
+        <button
+          type="button"
+          className="date-picker-button"
+          aria-label="Choose date from calendar"
+          onClick={() => pickerRef.current?.showPicker?.()}
+        >
+          <CalendarDays size={17} />
+        </button>
+      ) : null}
+      <input
+        ref={pickerRef}
+        className="date-picker-native"
+        type="date"
+        tabIndex={-1}
+        aria-hidden="true"
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+      />
+    </div>
+  )
+}
+
+function DateTimeField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const date = dateOnly(value)
+  const time = value.slice(11, 16)
+
+  return (
+    <div className="date-time-field">
+      <DateField
+        value={date}
+        onChange={(nextDate) => onChange(nextDate ? `${nextDate}T${time || '00:00'}` : '')}
+      />
+      <input
+        className="auth-input date-time-input"
+        type="time"
+        value={time}
+        onChange={(event) => onChange(`${date || formatDateInput(new Date())}T${event.target.value}`)}
+        aria-label="Observation time"
+      />
+    </div>
   )
 }
 
@@ -1474,14 +1517,20 @@ export default function PatientEntryPage() {
                         ].map(([name, label, type]) => (
                           <label key={name} className="filter-field">
                             <span>{label}</span>
-                            <input
-                              className="auth-input"
-                              type={type || 'text'}
-                              value={item[name as keyof TbForm]}
-                              onChange={(event) =>
-                                updateArrayItem(setTbHistories, index, name as keyof TbForm, event.target.value)
-                              }
-                            />
+                            {type === 'date' ? (
+                              <DateField
+                                value={item[name as keyof TbForm]}
+                                onChange={(value) => updateArrayItem(setTbHistories, index, name as keyof TbForm, value)}
+                              />
+                            ) : (
+                              <input
+                                className="auth-input"
+                                value={item[name as keyof TbForm]}
+                                onChange={(event) =>
+                                  updateArrayItem(setTbHistories, index, name as keyof TbForm, event.target.value)
+                                }
+                              />
+                            )}
                           </label>
                         ))}
                       </div>
@@ -1597,11 +1646,9 @@ export default function PatientEntryPage() {
               <div className="entry-grid">
                 <label className="filter-field">
                   <span>Observation Date / Time</span>
-                  <input
-                    className="auth-input"
-                    type="datetime-local"
+                  <DateTimeField
                     value={observation.observed_at}
-                    onChange={(event) => updateObjectField(setObservation, 'observed_at', event.target.value)}
+                    onChange={(value) => updateObjectField(setObservation, 'observed_at', value)}
                   />
                 </label>
                 <label className="filter-field">
@@ -1795,19 +1842,20 @@ export default function PatientEntryPage() {
                         ].map(([name, label, type]) => (
                           <label key={name} className="filter-field">
                             <span>{label}</span>
-                            <input
-                              className="auth-input"
-                              type={type || 'text'}
-                              value={item[name as keyof HistopathologyForm]}
-                              onChange={(event) =>
-                                updateArrayItem(
-                                  setHistopathologies,
-                                  index,
-                                  name as keyof HistopathologyForm,
-                                  event.target.value,
-                                )
-                              }
-                            />
+                            {type === 'date' ? (
+                              <DateField
+                                value={item[name as keyof HistopathologyForm]}
+                                onChange={(value) => updateArrayItem(setHistopathologies, index, name as keyof HistopathologyForm, value)}
+                              />
+                            ) : (
+                              <input
+                                className="auth-input"
+                                value={item[name as keyof HistopathologyForm]}
+                                onChange={(event) =>
+                                  updateArrayItem(setHistopathologies, index, name as keyof HistopathologyForm, event.target.value)
+                                }
+                              />
+                            )}
                           </label>
                         ))}
                       </div>
@@ -1856,19 +1904,20 @@ export default function PatientEntryPage() {
                         ].map(([name, label, type]) => (
                           <label key={name} className="filter-field">
                             <span>{label}</span>
-                            <input
-                              className="auth-input"
-                              type={type || 'text'}
-                              value={item[name as keyof MolecularForm]}
-                              onChange={(event) =>
-                                updateArrayItem(
-                                  setMolecularPathologies,
-                                  index,
-                                  name as keyof MolecularForm,
-                                  event.target.value,
-                                )
-                              }
-                            />
+                            {type === 'date' ? (
+                              <DateField
+                                value={item[name as keyof MolecularForm]}
+                                onChange={(value) => updateArrayItem(setMolecularPathologies, index, name as keyof MolecularForm, value)}
+                              />
+                            ) : (
+                              <input
+                                className="auth-input"
+                                value={item[name as keyof MolecularForm]}
+                                onChange={(event) =>
+                                  updateArrayItem(setMolecularPathologies, index, name as keyof MolecularForm, event.target.value)
+                                }
+                              />
+                            )}
                           </label>
                         ))}
                       </div>
@@ -1898,18 +1947,18 @@ export default function PatientEntryPage() {
                   ].map(([name, label, type]) => (
                     <label key={name} className="filter-field">
                       <span>{label}</span>
-                      <input
-                        className="auth-input"
-                        type={type || 'text'}
-                        value={observation[name as keyof typeof observation]}
-                        onChange={(event) =>
-                          updateObjectField(
-                            setObservation,
-                            name as keyof typeof observation,
-                            event.target.value,
-                          )
-                        }
-                      />
+                      {type === 'date' ? (
+                        <DateField
+                          value={observation[name as keyof typeof observation]}
+                          onChange={(value) => updateObjectField(setObservation, name as keyof typeof observation, value)}
+                        />
+                      ) : (
+                        <input
+                          className="auth-input"
+                          value={observation[name as keyof typeof observation]}
+                          onChange={(event) => updateObjectField(setObservation, name as keyof typeof observation, event.target.value)}
+                        />
+                      )}
                     </label>
                   ))}
                 </div>
@@ -1923,18 +1972,18 @@ export default function PatientEntryPage() {
                   ].map(([name, label, type]) => (
                     <label key={name} className="filter-field">
                       <span>{label}</span>
-                      <input
-                        className="auth-input"
-                        type={type || 'text'}
-                        value={observation[name as keyof typeof observation]}
-                        onChange={(event) =>
-                          updateObjectField(
-                            setObservation,
-                            name as keyof typeof observation,
-                            event.target.value,
-                          )
-                        }
-                      />
+                      {type === 'date' ? (
+                        <DateField
+                          value={observation[name as keyof typeof observation]}
+                          onChange={(value) => updateObjectField(setObservation, name as keyof typeof observation, value)}
+                        />
+                      ) : (
+                        <input
+                          className="auth-input"
+                          value={observation[name as keyof typeof observation]}
+                          onChange={(event) => updateObjectField(setObservation, name as keyof typeof observation, event.target.value)}
+                        />
+                      )}
                     </label>
                   ))}
                 </div>
@@ -2118,14 +2167,18 @@ export default function PatientEntryPage() {
                       ].map(([name, label, type]) => (
                         <label key={name} className="filter-field">
                           <span>{label}</span>
-                          <input
-                            className="auth-input"
-                            type={type || 'text'}
-                            value={marker[name as keyof MarkerForm]}
-                            onChange={(event) =>
-                              updateArrayItem(setMarkers, index, name as keyof MarkerForm, event.target.value)
-                            }
-                          />
+                          {type === 'date' ? (
+                            <DateField
+                              value={marker[name as keyof MarkerForm]}
+                              onChange={(value) => updateArrayItem(setMarkers, index, name as keyof MarkerForm, value)}
+                            />
+                          ) : (
+                            <input
+                              className="auth-input"
+                              value={marker[name as keyof MarkerForm]}
+                              onChange={(event) => updateArrayItem(setMarkers, index, name as keyof MarkerForm, event.target.value)}
+                            />
+                          )}
                         </label>
                       ))}
                     </div>
@@ -2236,19 +2289,20 @@ export default function PatientEntryPage() {
                       ].map(([name, label, type]) => (
                         <label key={name} className="filter-field">
                           <span>{label}</span>
-                          <input
-                            className="auth-input"
-                            type={type || 'text'}
-                            value={cycle[name as keyof TreatmentCycleForm]}
-                            onChange={(event) =>
-                              updateArrayItem(
-                                setTreatmentCycles,
-                                index,
-                                name as keyof TreatmentCycleForm,
-                                event.target.value,
-                              )
-                            }
-                          />
+                          {type === 'date' ? (
+                            <DateField
+                              value={cycle[name as keyof TreatmentCycleForm]}
+                              onChange={(value) => updateArrayItem(setTreatmentCycles, index, name as keyof TreatmentCycleForm, value)}
+                            />
+                          ) : (
+                            <input
+                              className="auth-input"
+                              value={cycle[name as keyof TreatmentCycleForm]}
+                              onChange={(event) =>
+                                updateArrayItem(setTreatmentCycles, index, name as keyof TreatmentCycleForm, event.target.value)
+                              }
+                            />
+                          )}
                         </label>
                       ))}
                     </div>
@@ -2298,19 +2352,20 @@ export default function PatientEntryPage() {
                         ].map(([name, label, type]) => (
                           <label key={name} className="filter-field">
                             <span>{label}</span>
-                            <input
-                              className="auth-input"
-                              type={type || 'text'}
-                              value={schedule[name as keyof RadiotherapyForm]}
-                              onChange={(event) =>
-                                updateArrayItem(
-                                  setRadiotherapySchedules,
-                                  index,
-                                  name as keyof RadiotherapyForm,
-                                  event.target.value,
-                                )
-                              }
-                            />
+                            {type === 'date' ? (
+                              <DateField
+                                value={schedule[name as keyof RadiotherapyForm]}
+                                onChange={(value) => updateArrayItem(setRadiotherapySchedules, index, name as keyof RadiotherapyForm, value)}
+                              />
+                            ) : (
+                              <input
+                                className="auth-input"
+                                value={schedule[name as keyof RadiotherapyForm]}
+                                onChange={(event) =>
+                                  updateArrayItem(setRadiotherapySchedules, index, name as keyof RadiotherapyForm, event.target.value)
+                                }
+                              />
+                            )}
                           </label>
                         ))}
                         <label className="filter-field">

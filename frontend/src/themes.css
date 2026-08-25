@@ -151,6 +151,8 @@ html[data-theme] .search-input {
   background: transparent;
 }
 html[data-theme] .search-input::placeholder { color: var(--faint); }
+html[data-theme] .date-picker-button { color: var(--accent); }
+html[data-theme] .date-picker-button:hover { background: var(--accent-soft); }
 
 html[data-theme] .topnav-link-active,
 html[data-theme] .primary-button,
