@@ -1019,6 +1019,10 @@
 .journey-event-response { border-left: 3px solid #eab308; }
 .journey-event-follow-up { border-left: 3px solid #64748b; }
 
+/* Keep the journey as the first clinical snapshot, immediately after the patient hero. */
+.page-grid > .patient-journey-panel { grid-row: 3; }
+.page-grid > #history { grid-row: 4; }
+
 .section-chip {
   display: inline-flex;
   align-items: center;
