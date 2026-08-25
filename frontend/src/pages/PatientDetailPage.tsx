@@ -12,21 +12,6 @@ import {
   Printer,
   UserRound,
 } from 'lucide-react'
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { fetchPatientDetail, type TreatmentCycle } from '../api'
 import {
@@ -36,6 +21,7 @@ import {
   ListPanel,
   LoadingState,
 } from '../components/registry-ui'
+import { ClinicalChart } from '../components/ClinicalChart'
 import {
   buildMarkerSeries,
   buildObservationTrend,
@@ -225,20 +211,24 @@ export default function PatientDetailPage() {
   const observationTrend = buildObservationTrend(patient?.observations ?? [])
   const treatmentMix = buildTreatmentMix(patient?.observations ?? [])
   const markerSeries = buildMarkerSeries(patient?.observations ?? [])
-  const markerReadings = useMemo(
-    () =>
-      (patient?.observations ?? []).flatMap((observation) =>
-        observation.cancer_markers.map((marker) =>
-          compactJoin([
-            marker.name,
-            marker.value,
-            marker.unit,
-            marker.observed_on ? formatDate(marker.observed_on) : formatDate(observation.observed_at),
-          ]),
-        ),
-      ),
-    [patient?.observations],
-  )
+  const markerBaselineGroups = useMemo(() => {
+    const groups = new Map<string, Array<{ label: string; value: number; date: string }>>()
+    activeObservation?.cancer_markers.forEach((marker) => {
+      const value = Number(marker.value)
+      if (!marker.name || !Number.isFinite(value)) {
+        return
+      }
+      const unit = marker.unit || 'Unit not recorded'
+      const values = groups.get(unit) ?? []
+      values.push({
+        label: marker.name,
+        value,
+        date: marker.observed_on ? formatDate(marker.observed_on) : formatDate(activeObservation.observed_at),
+      })
+      groups.set(unit, values)
+    })
+    return [...groups.entries()].map(([unit, readings]) => ({ unit, readings }))
+  }, [activeObservation])
   const molecularProfile = useMemo(() => {
     const counts = new Map<string, number>()
     filteredObservations.forEach((observation) => {
@@ -1282,31 +1272,16 @@ export default function PatientDetailPage() {
           </div>
           <div className="chart-box">
             {stagingTrend.length ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={stagingTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#d5e1eb" />
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="clinical"
-                    stroke="#0f4c81"
-                    strokeWidth={3}
-                    dot={{ r: 4 }}
-                    name="Clinical stage score"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="pathological"
-                    stroke="#f97316"
-                    strokeWidth={3}
-                    dot={{ r: 4 }}
-                    name="Pathological stage score"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <ClinicalChart option={{
+                tooltip: { trigger: 'axis' }, legend: { bottom: 0 },
+                grid: { left: 42, right: 18, top: 22, bottom: 46 },
+                xAxis: { type: 'category', data: stagingTrend.map((entry) => entry.label) },
+                yAxis: { type: 'value', minInterval: 1 },
+                series: [
+                  { name: 'Clinical stage score', type: 'line', smooth: true, data: stagingTrend.map((entry) => entry.clinical), symbolSize: 8, lineStyle: { width: 3, color: '#1677c8' }, itemStyle: { color: '#1677c8' } },
+                  { name: 'Pathological stage score', type: 'line', smooth: true, data: stagingTrend.map((entry) => entry.pathological), symbolSize: 8, lineStyle: { width: 3, color: '#f97316' }, itemStyle: { color: '#f97316' } },
+                ],
+              }} />
             ) : (
               <EmptyState
                 title="No staging trend available"
@@ -1325,18 +1300,16 @@ export default function PatientDetailPage() {
           </div>
           <div className="chart-box">
             {treatmentTrend.length ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={treatmentTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#d5e1eb" />
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="cycles" fill="#0f766e" radius={[8, 8, 0, 0]} name="Cycles" />
-                  <Bar dataKey="radiotherapy" fill="#0f4c81" radius={[8, 8, 0, 0]} name="Radiotherapy" />
-                  <Bar dataKey="surgeries" fill="#f97316" radius={[8, 8, 0, 0]} name="Surgeries" />
-                </BarChart>
-              </ResponsiveContainer>
+              <ClinicalChart option={{
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } }, legend: { bottom: 0 },
+                grid: { left: 42, right: 18, top: 22, bottom: 46 },
+                xAxis: { type: 'category', data: treatmentTrend.map((entry) => entry.label) }, yAxis: { type: 'value', minInterval: 1 },
+                series: [
+                  { name: 'Cycles', type: 'bar', data: treatmentTrend.map((entry) => entry.cycles), itemStyle: { color: '#0f9e8f', borderRadius: [7, 7, 0, 0] } },
+                  { name: 'Radiotherapy', type: 'bar', data: treatmentTrend.map((entry) => entry.radiotherapy), itemStyle: { color: '#1677c8', borderRadius: [7, 7, 0, 0] } },
+                  { name: 'Surgeries', type: 'bar', data: treatmentTrend.map((entry) => entry.surgeries), itemStyle: { color: '#f97316', borderRadius: [7, 7, 0, 0] } },
+                ],
+              }} />
             ) : (
               <EmptyState
                 title="No treatment trend available"
@@ -1356,27 +1329,11 @@ export default function PatientDetailPage() {
             </div>
           </div>
           <div className="chart-box">
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={observationTrend}>
-                <defs>
-                  <linearGradient id="observationFill" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#0f4c81" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#0f4c81" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#d5e1eb" />
-                <XAxis dataKey="label" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Area
-                  type="monotone"
-                  dataKey="count"
-                  stroke="#0f4c81"
-                  fill="url(#observationFill)"
-                  strokeWidth={3}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <ClinicalChart option={{
+              tooltip: { trigger: 'axis' }, grid: { left: 42, right: 18, top: 22, bottom: 34 },
+              xAxis: { type: 'category', data: observationTrend.map((entry) => entry.label) }, yAxis: { type: 'value', minInterval: 1 },
+              series: [{ type: 'line', smooth: true, data: observationTrend.map((entry) => entry.count), symbolSize: 7, lineStyle: { width: 3, color: '#1677c8' }, areaStyle: { color: '#1677c8', opacity: 0.22 }, itemStyle: { color: '#1677c8' } }],
+            }} />
           </div>
         </article>
 
@@ -1388,22 +1345,11 @@ export default function PatientDetailPage() {
             </div>
           </div>
           <div className="chart-box">
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={treatmentMix}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#d5e1eb" />
-                <XAxis dataKey="label" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="value" radius={[12, 12, 0, 0]}>
-                  {treatmentMix.map((entry, index) => (
-                    <Cell
-                      key={entry.label}
-                      fill={metricPalette[index % metricPalette.length]}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <ClinicalChart option={{
+              tooltip: { trigger: 'axis' }, grid: { left: 42, right: 18, top: 22, bottom: 34 },
+              xAxis: { type: 'category', data: treatmentMix.map((entry) => entry.label) }, yAxis: { type: 'value', minInterval: 1 },
+              series: [{ type: 'bar', data: treatmentMix.map((entry, index) => ({ value: entry.value, itemStyle: { color: metricPalette[index % metricPalette.length], borderRadius: [10, 10, 0, 0] } })) }],
+            }} />
           </div>
         </article>
       </section>
@@ -1626,15 +1572,12 @@ export default function PatientDetailPage() {
             {molecularProfile.length ? (
               <div className="molecular-chart">
                 <p className="list-panel-title">Recorded molecular activity</p>
-                <ResponsiveContainer width="100%" height={210}>
-                  <BarChart data={molecularProfile} margin={{ top: 8, right: 8, left: -18, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.22} />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="value" name="Records" fill="#16c7b0" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                <ClinicalChart height={210} option={{
+                  tooltip: { trigger: 'axis' }, grid: { left: 34, right: 12, top: 12, bottom: 38 },
+                  xAxis: { type: 'category', data: molecularProfile.map((entry) => entry.label), axisLabel: { fontSize: 11 } },
+                  yAxis: { type: 'value', minInterval: 1 },
+                  series: [{ name: 'Records', type: 'bar', data: molecularProfile.map((entry) => entry.value), itemStyle: { color: '#16c7b0', borderRadius: [6, 6, 0, 0] } }],
+                }} />
               </div>
             ) : null}
           </div>
@@ -1699,33 +1642,46 @@ export default function PatientDetailPage() {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Cancer markers</p>
-            <h3>{markerSeries.length ? 'Marker-specific longitudinal trends' : 'Baseline marker measurements'}</h3>
+            <h3>
+              {markerSeries.length
+                ? 'Marker-specific longitudinal trends'
+                : 'Baseline marker profile'}
+            </h3>
           </div>
         </div>
         <p className="entry-inline-note">
           {markerSeries.length
             ? 'Each chart represents one marker and one unit.'
-            : 'Each marker currently has one dated result. A trend chart will appear after a second result for the same marker.'}
+            : 'These bars show the selected observation only and are separated by unit. They are not a treatment-response trend.'}
         </p>
         {markerSeries.length ? (
           <div className="marker-chart-grid">
             {markerSeries.map((series) => (
               <div key={`${series.name}-${series.unit}`} className="chart-box marker-chart-box">
                 <p className="list-panel-title">{series.name}{series.unit ? ` (${series.unit})` : ''}</p>
-                <ResponsiveContainer width="100%" height={250}>
-                  <LineChart data={series.points}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#4b6a84" opacity={0.35} />
-                    <XAxis dataKey="label" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="value" stroke="#16c7b0" strokeWidth={3} dot={{ r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <ClinicalChart height={250} option={{
+                  tooltip: { trigger: 'axis', valueFormatter: (value) => `${value} ${series.unit}` },
+                  grid: { left: 46, right: 16, top: 16, bottom: 34 },
+                  xAxis: { type: 'category', data: series.points.map((point) => point.label) }, yAxis: { type: 'value' },
+                  series: [{ name: series.name, type: 'line', smooth: true, data: series.points.map((point) => point.value), symbolSize: 8, lineStyle: { color: '#16c7b0', width: 3 }, itemStyle: { color: '#16c7b0' } }],
+                }} />
               </div>
             ))}
           </div>
-        ) : markerReadings.length ? (
-          <ListPanel title="Recorded markers" items={markerReadings} />
+        ) : markerBaselineGroups.length ? (
+          <div className="marker-chart-grid">
+            {markerBaselineGroups.map((group) => (
+              <div key={group.unit} className="chart-box marker-chart-box">
+                <p className="list-panel-title">Baseline values ({group.unit})</p>
+                <ClinicalChart height={250} option={{
+                  tooltip: { trigger: 'axis', valueFormatter: (value) => `${value} ${group.unit}` },
+                  grid: { left: 46, right: 16, top: 16, bottom: 34 },
+                  xAxis: { type: 'category', data: group.readings.map((reading) => reading.label) }, yAxis: { type: 'value' },
+                  series: [{ name: 'Baseline value', type: 'bar', data: group.readings.map((reading) => reading.value), itemStyle: { color: '#20b8ff', borderRadius: [7, 7, 0, 0] } }],
+                }} />
+              </div>
+            ))}
+          </div>
         ) : (
           <EmptyState
             title="No marker data recorded"

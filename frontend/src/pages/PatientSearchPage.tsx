@@ -12,19 +12,6 @@ import {
   Stethoscope,
   Waves,
 } from 'lucide-react'
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   buildPatientExportUrl,
@@ -33,6 +20,7 @@ import {
   type DashboardSummary,
 } from '../api'
 import { EmptyState, LoadingState } from '../components/registry-ui'
+import { ClinicalChart } from '../components/ClinicalChart'
 import { metricPalette } from '../lib/registry'
 
 function DashboardSection({
@@ -286,24 +274,21 @@ export default function PatientSearchPage() {
             {summaryQuery.isLoading ? (
               <LoadingState label="Loading summary" />
             ) : (
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Pie
-                    data={publicationData}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={62}
-                    outerRadius={88}
-                    paddingAngle={4}
-                  >
-                    {publicationData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
+              <ClinicalChart
+                height={260}
+                option={{
+                  tooltip: { trigger: 'item', valueFormatter: (value) => String(value) },
+                  legend: { bottom: 0 },
+                  series: [{
+                    type: 'pie',
+                    radius: ['48%', '72%'],
+                    padAngle: 4,
+                    itemStyle: { borderRadius: 8, borderColor: 'transparent', borderWidth: 3 },
+                    label: { show: false },
+                    data: publicationData.map(({ name, value, fill }) => ({ name, value, itemStyle: { color: fill } })),
+                  }],
+                }}
+              />
             )}
           </div>
         </article>
@@ -320,29 +305,19 @@ export default function PatientSearchPage() {
             {patientsQuery.isLoading ? (
               <LoadingState label="Loading patients" />
             ) : observationChartData.length ? (
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={observationChartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#d5e1eb" />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fontSize: 11 }}
-                    interval={0}
-                    angle={-18}
-                    textAnchor="end"
-                    height={62}
-                  />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="observations" radius={[10, 10, 0, 0]}>
-                    {observationChartData.map((entry, index) => (
-                      <Cell
-                        key={entry.name}
-                        fill={metricPalette[index % metricPalette.length]}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <ClinicalChart
+                height={260}
+                option={{
+                  tooltip: { trigger: 'axis' },
+                  grid: { left: 42, right: 14, top: 18, bottom: 74 },
+                  xAxis: { type: 'category', data: observationChartData.map((entry) => entry.name), axisLabel: { rotate: 18, fontSize: 11, interval: 0 } },
+                  yAxis: { type: 'value', minInterval: 1 },
+                  series: [{
+                    type: 'bar',
+                    data: observationChartData.map((entry, index) => ({ value: entry.observations, itemStyle: { color: metricPalette[index % metricPalette.length], borderRadius: [8, 8, 0, 0] } })),
+                  }],
+                }}
+              />
             ) : (
               <EmptyState
                 title="No matching patients"
