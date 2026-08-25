@@ -295,7 +295,7 @@ export default function PatientDetailPage() {
         activeObservation?.diagnosis_disease_group,
         compareObservation?.diagnosis_disease_group,
       ),
-      summary: `${activeObservation?.diagnosis_disease_group || 'N/A'} -> ${compareObservation?.diagnosis_disease_group || 'N/A'}`,
+      summary: `${activeObservation?.diagnosis_disease_group || ''} -> ${compareObservation?.diagnosis_disease_group || ''}`,
     },
     {
       label: 'Primary site',
@@ -303,7 +303,7 @@ export default function PatientDetailPage() {
         activeObservation?.diagnosis_primary_site,
         compareObservation?.diagnosis_primary_site,
       ),
-      summary: `${activeObservation?.diagnosis_primary_site || 'N/A'} -> ${compareObservation?.diagnosis_primary_site || 'N/A'}`,
+      summary: `${activeObservation?.diagnosis_primary_site || ''} -> ${compareObservation?.diagnosis_primary_site || ''}`,
     },
     {
       label: 'Clinical TNM',
@@ -323,11 +323,11 @@ export default function PatientDetailPage() {
         activeObservation?.clinical_stagings[0]?.t,
         activeObservation?.clinical_stagings[0]?.n,
         activeObservation?.clinical_stagings[0]?.m,
-      ) || 'N/A'} -> ${formatStage(
+      ) || ''} -> ${formatStage(
         compareObservation?.clinical_stagings[0]?.t,
         compareObservation?.clinical_stagings[0]?.n,
         compareObservation?.clinical_stagings[0]?.m,
-      ) || 'N/A'}`,
+      ) || ''}`,
     },
     {
       label: 'Pathological TNM',
@@ -347,11 +347,11 @@ export default function PatientDetailPage() {
         activeObservation?.pathological_stagings[0]?.t,
         activeObservation?.pathological_stagings[0]?.n,
         activeObservation?.pathological_stagings[0]?.m,
-      ) || 'N/A'} -> ${formatStage(
+      ) || ''} -> ${formatStage(
         compareObservation?.pathological_stagings[0]?.t,
         compareObservation?.pathological_stagings[0]?.n,
         compareObservation?.pathological_stagings[0]?.m,
-      ) || 'N/A'}`,
+      ) || ''}`,
     },
     {
       label: 'Treatment load',
@@ -375,30 +375,30 @@ export default function PatientDetailPage() {
       ),
       summary: `${joinValues(
         activeObservation?.cancer_markers.map((item) => compactJoin([item.name, item.value])) ?? [],
-      ) || 'N/A'} -> ${joinValues(
+      ) || ''} -> ${joinValues(
         compareObservation?.cancer_markers.map((item) => compactJoin([item.name, item.value])) ?? [],
-      ) || 'N/A'}`,
+      ) || ''}`,
     },
   ].filter((item) => item.changed)
   const compareReportLines = [
-    `Primary observation: ${formatDateTime(activeObservation?.observed_at) || 'N/A'}${
+    `Primary observation: ${formatDateTime(activeObservation?.observed_at) || ''}${
       activeObservation?.center_name ? ` at ${activeObservation.center_name}` : ''
     }`,
-    `Comparison observation: ${formatDateTime(compareObservation?.observed_at) || 'N/A'}${
+    `Comparison observation: ${formatDateTime(compareObservation?.observed_at) || ''}${
       compareObservation?.center_name ? ` at ${compareObservation.center_name}` : ''
     }`,
     hasChanged(
       activeObservation?.diagnosis_primary_site,
       compareObservation?.diagnosis_primary_site,
     )
-      ? `Primary site changed from ${activeObservation?.diagnosis_primary_site || 'N/A'} to ${compareObservation?.diagnosis_primary_site || 'N/A'}.`
-      : `Primary site remained ${activeObservation?.diagnosis_primary_site || 'N/A'}.`,
+      ? `Primary site changed from ${activeObservation?.diagnosis_primary_site || ''} to ${compareObservation?.diagnosis_primary_site || ''}.`
+      : `Primary site remained ${activeObservation?.diagnosis_primary_site || ''}.`,
     hasChanged(
       activeObservation?.diagnosis_disease_group,
       compareObservation?.diagnosis_disease_group,
     )
-      ? `Disease group changed from ${activeObservation?.diagnosis_disease_group || 'N/A'} to ${compareObservation?.diagnosis_disease_group || 'N/A'}.`
-      : `Disease group remained ${activeObservation?.diagnosis_disease_group || 'N/A'}.`,
+      ? `Disease group changed from ${activeObservation?.diagnosis_disease_group || ''} to ${compareObservation?.diagnosis_disease_group || ''}.`
+      : `Disease group remained ${activeObservation?.diagnosis_disease_group || ''}.`,
     hasChanged(
       formatStage(
         activeObservation?.clinical_stagings[0]?.t,
@@ -416,20 +416,20 @@ export default function PatientDetailPage() {
             activeObservation?.clinical_stagings[0]?.t,
             activeObservation?.clinical_stagings[0]?.n,
             activeObservation?.clinical_stagings[0]?.m,
-          ) || 'N/A'
+          ) || ''
         } to ${
           formatStage(
             compareObservation?.clinical_stagings[0]?.t,
             compareObservation?.clinical_stagings[0]?.n,
             compareObservation?.clinical_stagings[0]?.m,
-          ) || 'N/A'
+          ) || ''
         }.`
       : `Clinical TNM remained ${
           formatStage(
             activeObservation?.clinical_stagings[0]?.t,
             activeObservation?.clinical_stagings[0]?.n,
             activeObservation?.clinical_stagings[0]?.m,
-          ) || 'N/A'
+          ) || ''
         }.`,
     hasChanged(
       joinValues(activeObservation?.cancer_markers.map((item) => compactJoin([item.name, item.value, item.unit])) ?? []),
@@ -438,16 +438,16 @@ export default function PatientDetailPage() {
       ? `Marker profile changed from ${
           joinValues(
             activeObservation?.cancer_markers.map((item) => compactJoin([item.name, item.value, item.unit])) ?? [],
-          ) || 'N/A'
+          ) || ''
         } to ${
           joinValues(
             compareObservation?.cancer_markers.map((item) => compactJoin([item.name, item.value, item.unit])) ?? [],
-          ) || 'N/A'
+          ) || ''
         }.`
       : `Marker profile remained ${
           joinValues(
             activeObservation?.cancer_markers.map((item) => compactJoin([item.name, item.value, item.unit])) ?? [],
-          ) || 'N/A'
+          ) || ''
         }.`,
     `Treatment burden: cycles ${activeObservation?.treatment_cycles.length ?? 0} -> ${compareObservation?.treatment_cycles.length ?? 0}, radiotherapy ${activeObservation?.radiotherapy_schedules.length ?? 0} -> ${compareObservation?.radiotherapy_schedules.length ?? 0}, surgeries ${activeObservation?.surgeries.length ?? 0} -> ${compareObservation?.surgeries.length ?? 0}.`,
   ]
@@ -665,11 +665,9 @@ export default function PatientDetailPage() {
           </p>
         </div>
         <div className="header-badges">
-          <span className="data-pill">{patient.gender || 'Gender N/A'}</span>
-          <span className="data-pill">
-            {patient.age ? `${patient.age} years` : 'Age N/A'}
-          </span>
-          <span className="data-pill">{patient.phone || 'No phone'}</span>
+          {patient.gender ? <span className="data-pill">{patient.gender}</span> : null}
+          {patient.age ? <span className="data-pill">{patient.age} years</span> : null}
+          {patient.phone ? <span className="data-pill">{patient.phone}</span> : null}
         </div>
       </section>
 

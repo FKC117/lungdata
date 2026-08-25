@@ -76,9 +76,9 @@ export default function LegacyDraftReviewPage() {
                     <tr key={row.legacy_history_id}>
                       <td>{row.legacy_history_id}</td>
                       <td>{row.missing_observation_id}</td>
-                      <td>{row.marital_status || 'N/A'}</td>
-                      <td>{row.first_diagnosis_date || 'N/A'}</td>
-                      <td>{row.created_at || 'N/A'}</td>
+                      <td>{row.marital_status || ''}</td>
+                      <td>{row.first_diagnosis_date || ''}</td>
+                      <td>{row.created_at || ''}</td>
                       <td><span className="status-pill status-draft">{row.resolution_status}</span></td>
                     </tr>
                   ))}

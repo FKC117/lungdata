@@ -10,7 +10,7 @@ export function DataBadge({
   return (
     <div className="data-badge">
       <span>{label}</span>
-      <strong>{value || 'N/A'}</strong>
+      <strong>{value || ''}</strong>
     </div>
   )
 }
@@ -25,7 +25,7 @@ export function DataPoint({
   return (
     <div className="data-point">
       <span>{label}</span>
-      <strong>{value === null || value === undefined || value === '' ? 'N/A' : value}</strong>
+      <strong>{value === null || value === undefined || value === '' ? '' : value}</strong>
     </div>
   )
 }

@@ -60,8 +60,8 @@ function AppHeader({
   return (
     <header className="topbar">
       <div>
-        <p className="eyebrow">Canonical Registry</p>
-        <h1>Lung Panel Intelligence Hub</h1>
+        <p className="eyebrow">Lung Cancer Registry</p>
+        <h1>Lung Cancer Intelligence Hub</h1>
       </div>
       <div className="topbar-actions">
         <nav className="topnav" aria-label="Primary">

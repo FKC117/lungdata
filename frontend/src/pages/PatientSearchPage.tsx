@@ -128,13 +128,25 @@ export default function PatientSearchPage() {
   }, [deferredQuery, searchParams, setSearchParams])
 
   const patients = patientsQuery.data?.results ?? []
-  const observationChartData = useMemo(
-    () =>
-      patients.slice(0, 8).map((patient) => ({
-        name: patient.name || patient.registry_id,
-        observations: patient.observation_count,
-      })),
-    [patients],
+  const observationDistribution = useMemo(() => {
+    const buckets = [
+      { name: 'No observations', value: 0 },
+      { name: '1 observation', value: 0 },
+      { name: '2-4 observations', value: 0 },
+      { name: '5+ observations', value: 0 },
+    ]
+
+    patients.forEach((patient) => {
+      const count = patient.observation_count
+      const index = count === 0 ? 0 : count === 1 ? 1 : count <= 4 ? 2 : 3
+      buckets[index].value += 1
+    })
+
+    return buckets
+  }, [patients])
+  const currentPageObservationTotal = patients.reduce(
+    (total, patient) => total + patient.observation_count,
+    0,
   )
 
   const publicationData = useMemo(() => {
@@ -155,6 +167,23 @@ export default function PatientSearchPage() {
   const pageSize = 24
   const startItem = totalCount === 0 ? 0 : (page - 1) * pageSize + 1
   const endItem = Math.min(page * pageSize, totalCount)
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+  const paginationItems = useMemo<Array<number | 'ellipsis'>>(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, index) => index + 1)
+    }
+
+    const nearbyPages = [1, page - 1, page, page + 1, totalPages]
+      .filter((item) => item >= 1 && item <= totalPages)
+      .filter((item, index, items) => items.indexOf(item) === index)
+      .sort((left, right) => left - right)
+
+    return nearbyPages.flatMap((item, index) =>
+      index > 0 && item - nearbyPages[index - 1] > 1
+        ? ['ellipsis', item]
+        : [item],
+    )
+  }, [page, totalPages])
 
   function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -213,32 +242,34 @@ export default function PatientSearchPage() {
 
   return (
     <section className="page-grid">
-      <section className="hero-panel">
+      <section className="hero-panel registry-search-hero">
         <div className="hero-copy">
           <p className="eyebrow">Patient Search and Analytics</p>
-          <h2>Search by patient ID, registration number, or phone.</h2>
+          <h2>Search the patient registry</h2>
           <p className="hero-text">
-            Canonical Django-backed registry search with observation-state filtering.
+            Find a patient by ID, registration number, phone, or name.
           </p>
         </div>
-        <form className="search-panel" onSubmit={handleSearchSubmit}>
-          <label className="search-label" htmlFor="patient-search">
-            Patient lookup
-          </label>
-          <div className="search-row">
-            <Search className="search-icon" size={18} />
-            <input
-              id="patient-search"
-              className="search-input"
-              value={draftQuery}
-              onChange={(event) => setDraftQuery(event.target.value)}
-              placeholder="Try 01754423423, REG-000000001, or a patient name"
-            />
-            <button className="primary-button" type="submit">
-              Search
-            </button>
+        <form className="search-panel registry-search-panel" onSubmit={handleSearchSubmit}>
+          <div className="search-field-group">
+            <label className="search-label" htmlFor="patient-search">
+              Patient lookup
+            </label>
+            <div className="search-row">
+              <Search className="search-icon" size={18} />
+              <input
+                id="patient-search"
+                className="search-input"
+                value={draftQuery}
+                onChange={(event) => setDraftQuery(event.target.value)}
+                placeholder="Try 01754423423, REG-000000001, or a patient name"
+              />
+              <button className="primary-button" type="submit">
+                Search
+              </button>
+            </div>
           </div>
-          <div className="inline-filter-row">
+          <div className="inline-filter-row registry-state-field">
             <label className="inline-filter-label" htmlFor="state-filter">
               Observation state
             </label>
@@ -297,24 +328,27 @@ export default function PatientSearchPage() {
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Result Snapshot</p>
-              <h3>Observation volume in current page</h3>
+              <h3>
+                Observation distribution: {currentPageObservationTotal} records across {patients.length} listed patients
+              </h3>
             </div>
             <Waves className="panel-icon" />
           </div>
           <div className="chart-box">
             {patientsQuery.isLoading ? (
               <LoadingState label="Loading patients" />
-            ) : observationChartData.length ? (
+            ) : observationDistribution.length ? (
               <ClinicalChart
                 height={260}
                 option={{
-                  tooltip: { trigger: 'axis' },
-                  grid: { left: 42, right: 14, top: 18, bottom: 74 },
-                  xAxis: { type: 'category', data: observationChartData.map((entry) => entry.name), axisLabel: { rotate: 18, fontSize: 11, interval: 0 } },
+                  tooltip: { trigger: 'axis', valueFormatter: (value) => `${value} patients` },
+                  grid: { left: 42, right: 14, top: 18, bottom: 48 },
+                  xAxis: { type: 'category', data: observationDistribution.map((entry) => entry.name), axisLabel: { fontSize: 11, interval: 0 } },
                   yAxis: { type: 'value', minInterval: 1 },
                   series: [{
+                    name: 'Patients',
                     type: 'bar',
-                    data: observationChartData.map((entry, index) => ({ value: entry.observations, itemStyle: { color: metricPalette[index % metricPalette.length], borderRadius: [8, 8, 0, 0] } })),
+                    data: observationDistribution.map((entry, index) => ({ value: entry.value, itemStyle: { color: metricPalette[index % metricPalette.length], borderRadius: [8, 8, 0, 0] } })),
                   }],
                 }}
               />
@@ -432,10 +466,10 @@ export default function PatientSearchPage() {
                           </div>
                         </td>
                         <td>{patient.registry_id}</td>
-                        <td>{patient.phone || 'N/A'}</td>
-                        <td>{patient.age ?? 'N/A'}</td>
-                        <td>{patient.gender || 'N/A'}</td>
-                        <td>{patient.district || 'N/A'}</td>
+                        <td>{patient.phone || ''}</td>
+                        <td>{patient.age ?? ''}</td>
+                        <td>{patient.gender || ''}</td>
+                        <td>{patient.district || ''}</td>
                         <td>{patient.observation_count}</td>
                         <td>
                           {patient.latest_observation ? (
@@ -453,7 +487,7 @@ export default function PatientSearchPage() {
                           )}
                         </td>
                         <td>
-                          {patient.latest_observation?.diagnosis_disease_group || 'N/A'}
+                          {patient.latest_observation?.diagnosis_disease_group || ''}
                         </td>
                         <td className="table-arrow-cell">
                           <button
@@ -479,27 +513,27 @@ export default function PatientSearchPage() {
                               <div className="expanded-grid">
                                 <div>
                                   <span className="expanded-label">Registration No</span>
-                                  <strong>{patient.registration_no || 'N/A'}</strong>
+                                  <strong>{patient.registration_no || ''}</strong>
                                 </div>
                                 <div>
                                   <span className="expanded-label">Legacy ID</span>
-                                  <strong>{patient.legacy_id ?? 'N/A'}</strong>
+                                  <strong>{patient.legacy_id ?? ''}</strong>
                                 </div>
                                 <div>
                                   <span className="expanded-label">Socio-economic</span>
-                                  <strong>{patient.socio_economic_status || 'N/A'}</strong>
+                                  <strong>{patient.socio_economic_status || ''}</strong>
                                 </div>
                                 <div>
                                   <span className="expanded-label">Latest site</span>
-                                  <strong>{patient.latest_observation?.diagnosis_primary_site || 'N/A'}</strong>
+                                  <strong>{patient.latest_observation?.diagnosis_primary_site || ''}</strong>
                                 </div>
                                 <div>
                                   <span className="expanded-label">Latest laterality</span>
-                                  <strong>{patient.latest_observation?.diagnosis_laterality || 'N/A'}</strong>
+                                  <strong>{patient.latest_observation?.diagnosis_laterality || ''}</strong>
                                 </div>
                                 <div>
                                   <span className="expanded-label">Latest observed at</span>
-                                  <strong>{patient.latest_observation?.observed_at || 'N/A'}</strong>
+                                  <strong>{patient.latest_observation?.observed_at || ''}</strong>
                                 </div>
                               </div>
                               <div className="expanded-actions">
@@ -545,7 +579,23 @@ export default function PatientSearchPage() {
                 <ChevronLeft size={16} />
                 Previous
               </button>
-              <span className="pagination-label">Page {page}</span>
+              <div className="pagination-pages" aria-label="Page navigation">
+                {paginationItems.map((item, index) =>
+                  item === 'ellipsis' ? (
+                    <span key={`ellipsis-${index}`} className="pagination-ellipsis">...</span>
+                  ) : (
+                    <button
+                      key={item}
+                      type="button"
+                      className={item === page ? 'page-number page-number-active' : 'page-number'}
+                      onClick={() => goToPage(item)}
+                      aria-current={item === page ? 'page' : undefined}
+                    >
+                      {item}
+                    </button>
+                  ),
+                )}
+              </div>
               <button
                 type="button"
                 className="pager-button"

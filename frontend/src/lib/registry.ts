@@ -67,7 +67,7 @@ export function buildMarkerSeries(observations: ClinicalObservation[]) {
 
 export function joinValues(values: Array<string | null | undefined>) {
   const cleanValues = values.filter(Boolean)
-  return cleanValues.length ? cleanValues.join(', ') : 'N/A'
+  return cleanValues.length ? cleanValues.join(', ') : ''
 }
 
 export function compactJoin(values: Array<string | null | undefined>) {
@@ -77,7 +77,7 @@ export function compactJoin(values: Array<string | null | undefined>) {
 
 export function formatMeasure(value?: string | number | null, unit?: string) {
   if (value === null || value === undefined || value === '') {
-    return 'N/A'
+    return ''
   }
 
   return unit ? `${value} ${unit}` : String(value)
@@ -89,12 +89,12 @@ export function formatStage(
   m?: string | null,
 ) {
   const parts = [t, n, m].filter(Boolean)
-  return parts.length ? parts.join(' / ') : 'N/A'
+  return parts.length ? parts.join(' / ') : ''
 }
 
 export function formatDate(value?: string | null) {
   if (!value) {
-    return 'N/A'
+    return ''
   }
 
   return new Intl.DateTimeFormat('en-GB', {
@@ -106,7 +106,7 @@ export function formatDate(value?: string | null) {
 
 export function formatDateTime(value?: string | null) {
   if (!value) {
-    return 'N/A'
+    return ''
   }
 
   return new Intl.DateTimeFormat('en-GB', {

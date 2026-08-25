@@ -42,6 +42,16 @@ html[data-theme='dark'] {
 }
 
 html[data-theme] body { background: var(--app-bg); color: var(--text); }
+html[data-theme] body,
+html[data-theme] #root { overflow-x: clip; }
+html[data-theme] .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in srgb, var(--app-bg) 88%, transparent);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--border);
+}
 html[data-theme] .app-shell {
   background:
     radial-gradient(circle at 12% 0%, var(--app-glow-a), transparent 27%),
@@ -52,6 +62,7 @@ html[data-theme] .app-shell {
 html[data-theme] .topbar h1,
 html[data-theme] .hero-copy h2,
 html[data-theme] .panel h3,
+html[data-theme] .entry-record-check-copy h3,
 html[data-theme] .auth-hero h2,
 html[data-theme] .patient-name,
 html[data-theme] .timeline-title,
@@ -72,9 +83,12 @@ html[data-theme] .timeline-subtitle,
 html[data-theme] .data-point span,
 html[data-theme] .filter-field span,
 html[data-theme] .search-label,
+html[data-theme] .inline-filter-label,
 html[data-theme] .entry-inline-note,
 html[data-theme] .compare-report-body p,
-html[data-theme] .pagination-label { color: var(--muted); }
+html[data-theme] .pagination-label,
+html[data-theme] .entry-lookup-status,
+html[data-theme] .entry-match small { color: var(--muted); }
 
 html[data-theme] .eyebrow,
 html[data-theme] .metric-label,
@@ -124,10 +138,14 @@ html[data-theme] .legacy-review-filters select {
   background: var(--surface-muted);
 }
 
+html[data-theme] .entry-step strong { color: var(--text); }
+html[data-theme] .entry-step span { color: var(--accent); }
+
 html[data-theme] .search-row {
   border-color: var(--border);
   background: var(--surface-muted);
 }
+html[data-theme] .entry-match-area { border-color: var(--border); }
 html[data-theme] .search-input {
   color: var(--text);
   background: transparent;
@@ -141,6 +159,24 @@ html[data-theme] .entry-step-active {
   color: #ffffff;
   border-color: transparent;
   background: linear-gradient(135deg, var(--accent), var(--accent-bright));
+}
+html[data-theme] .entry-step-active strong,
+html[data-theme] .entry-step-active span { color: #ffffff; }
+
+/* Dark mode uses a quieter active state to avoid large high-luminance cyan blocks. */
+html[data-theme='dark'] .topnav-link-active,
+html[data-theme='dark'] .entry-step-active,
+html[data-theme='dark'] .primary-button,
+html[data-theme='dark'] .auth-submit {
+  border-color: rgba(69, 242, 208, 0.42);
+  background: linear-gradient(135deg, #0b5e63, #164b87);
+  color: #d9f8f2;
+  box-shadow: 0 8px 20px rgba(8, 169, 155, 0.16);
+}
+html[data-theme='dark'] .entry-step-active strong { color: #d9f8f2; }
+html[data-theme='dark'] .entry-step-active span {
+  background: rgba(69, 242, 208, 0.15);
+  color: #6ff8de;
 }
 
 html[data-theme] .data-pill,
@@ -214,6 +250,23 @@ html[data-theme] .molecular-chart {
 }
 html[data-theme] .marker-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.85rem; margin-top: 0.85rem; }
 html[data-theme] .marker-chart-box { min-height: 0; }
+html[data-theme] .clinical-chart-export-wrap { position: relative; }
+html[data-theme] .clinical-chart-export-button {
+  position: absolute;
+  z-index: 2;
+  top: 0.45rem;
+  right: 0.5rem;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--accent);
+  cursor: pointer;
+}
+html[data-theme] .clinical-chart-export-button:hover { background: var(--accent-soft); }
 .theme-toggle {
   position: relative;
   display: inline-flex;

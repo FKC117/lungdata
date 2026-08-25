@@ -1,7 +1,7 @@
 import { type Dispatch, type FormEvent, type SetStateAction, useDeferredValue, useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Trash2 } from 'lucide-react'
 import {
   createPatientEntry,
   fetchPatientDemographics,
@@ -385,6 +385,7 @@ export default function PatientEntryPage() {
     emptyRadiotherapy(),
   ])
   const [surgeries, setSurgeries] = useState<SurgeryForm[]>([emptySurgery()])
+  const [recordLookupTerm, setRecordLookupTerm] = useState('')
   const patientDetailQuery = useQuery({
     queryKey: ['patient-edit-detail', registryId],
     queryFn: () => fetchPatientDetail(registryId),
@@ -395,9 +396,7 @@ export default function PatientEntryPage() {
     queryFn: () => fetchPatientDemographics(patient.district, observation.diagnosis_disease_group),
   })
   const demographics = demographicsQuery.data
-  const duplicateLookupTerm =
-    patient.registration_no.trim() || patient.phone.trim() || patient.name.trim()
-  const deferredDuplicateLookupTerm = useDeferredValue(duplicateLookupTerm)
+  const deferredDuplicateLookupTerm = useDeferredValue(recordLookupTerm.trim())
   const duplicateLookupQuery = useQuery({
     queryKey: ['entry-duplicate-check', deferredDuplicateLookupTerm],
     queryFn: () => fetchPatients(deferredDuplicateLookupTerm, 1, 6),
@@ -921,13 +920,12 @@ export default function PatientEntryPage() {
         Back to registry
       </Link>
 
-      <section className="hero-panel hero-panel-tight">
+      <section className="hero-panel hero-panel-tight entry-hero-compact">
         <div className="hero-copy">
           <p className="eyebrow">{isEditMode ? 'Edit Patient Entry' : 'New Patient Entry'}</p>
-          <h2>{isEditMode ? 'Update patient, diagnosis, and treatment record' : 'Create patient, diagnosis, and treatment record'}</h2>
+          <h2>{isEditMode ? 'Update patient entry' : 'Create patient entry'}</h2>
           <p className="hero-text">
-            This workflow is now organized like the legacy experience: patient demography,
-            diagnosis workup, then treatment planning and follow-up.
+            Demography, diagnosis, treatment, and follow-up in one clinical workflow.
           </p>
         </div>
         <div className="header-badges">
@@ -967,11 +965,23 @@ export default function PatientEntryPage() {
                   <span className="entry-record-check-icon"><Search size={18} /></span>
                   <div>
                     <p className="eyebrow">Existing record check</p>
-                    <h3>Check before creating a new record</h3>
-                    <p>
-                      Paste a registration number, mobile number, or patient name above. We will search the
-                      canonical registry automatically.
-                    </p>
+                    <h3>Find an existing patient</h3>
+                  </div>
+                </div>
+                <div className="entry-record-lookup">
+                  <label className="search-label" htmlFor="existing-record-lookup">Patient lookup</label>
+                  <div className="search-row">
+                    <Search className="search-icon" size={18} />
+                    <input
+                      id="existing-record-lookup"
+                      className="search-input"
+                      value={recordLookupTerm}
+                      onChange={(event) => setRecordLookupTerm(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') event.preventDefault()
+                      }}
+                      placeholder="Paste registration no., mobile no., or patient name"
+                    />
                   </div>
                 </div>
                 {deferredDuplicateLookupTerm.length >= 3 ? (
@@ -983,23 +993,26 @@ export default function PatientEntryPage() {
                     {duplicateMatches.length ? (
                       <div className="entry-match-list">
                         {duplicateMatches.map((match) => (
-                          <Link key={match.registry_id} className="entry-match" to={`/patients/${match.registry_id}`}>
+                          <button
+                            key={match.registry_id}
+                            type="button"
+                            className="entry-match"
+                            onClick={() => navigate(`/patients/${match.registry_id}/edit`)}
+                          >
                             <span>
                               <strong>{match.name || 'Unnamed patient'}</strong>
                               <small>{match.registration_no || match.legacy_unique_id || match.registry_id}</small>
                             </span>
                             <span className="entry-match-meta">
-                              {match.phone || 'No phone'}
-                              <ExternalLink size={15} />
+                              {match.phone || ''}
+                              <span>Load entry</span>
                             </span>
-                          </Link>
+                          </button>
                         ))}
                       </div>
                     ) : null}
                   </div>
-                ) : (
-                  <span className="entry-lookup-status">Start with at least 3 characters in one of the lookup fields.</span>
-                )}
+                ) : null}
               </section>
             ) : null}
 
