@@ -24,7 +24,6 @@ import {
 import { ClinicalChart } from '../components/ClinicalChart'
 import {
   buildMarkerSeries,
-  buildObservationTrend,
   buildTreatmentMix,
   compactJoin,
   formatDate,
@@ -223,7 +222,6 @@ export default function PatientDetailPage() {
   )
   const activeObservation = filteredObservations[activeObservationIndex]
   const compareObservation = filteredObservations[compareObservationIndex]
-  const observationTrend = buildObservationTrend(patient?.observations ?? [])
   const treatmentMix = buildTreatmentMix(patient?.observations ?? [])
   const markerSeries = buildMarkerSeries(patient?.observations ?? [])
   const markerBaselineGroups = useMemo(() => {
@@ -257,6 +255,48 @@ export default function PatientDetailPage() {
       }),
     [activeObservation],
   )
+  const clinicalCourse = useMemo(() => {
+    const events: Array<{ date: string; category: string; label: string; detail: string; observationIndex: number; targetId: string }> = []
+    const add = (date: string | null | undefined, category: string, label: string, detail: string, observationIndex: number, targetId: string) => {
+      if (date) events.push({ date, category, label, detail, observationIndex, targetId })
+    }
+
+    ;(patient?.observations ?? []).forEach((observation, index) => {
+      const diagnosisDetail = compactJoin([observation.diagnosis_disease_group, observation.diagnosis_primary_site]) ?? ''
+      add(observation.history?.first_diagnosis_date, 'Diagnosis', 'First diagnosis', diagnosisDetail, index, 'diagnosis')
+      add(observation.observed_at, 'Follow-up', `Observation ${index + 1}`, compactJoin([observation.center_name, observation.consulting_doctor_name]) ?? '', index, 'clinical-snapshot')
+      observation.histopathologies.forEach((item) => add(item.observed_on, 'Pathology', 'Histopathology', compactJoin([item.histology_type, item.site]) ?? '', index, 'pathology'))
+      observation.molecular_pathologies.forEach((item) => add(item.observed_on, 'Molecular', 'Molecular test', compactJoin([item.gene, item.exon, item.status]) ?? '', index, 'molecular-pathology'))
+      observation.treatment_cycles.forEach((item) => {
+        add(item.chemo_starting_date, 'Treatment', 'Systemic therapy', compactJoin([item.current_chemo_protocol, item.chemo_cycle_no ? `Cycle ${item.chemo_cycle_no}` : null]) ?? '', index, 'treatment')
+        add(item.recist_1_date, 'Response', 'RECIST assessment', item.recist_1_result ?? '', index, 'response-outcomes')
+        add(item.irecist_date, 'Response', 'iRECIST assessment', item.irecist_result ?? '', index, 'response-outcomes')
+        add(item.disease_progression_status_date, 'Response', 'Progression status', item.disease_progression_status ?? '', index, 'response-outcomes')
+      })
+      observation.radiotherapy_schedules.forEach((item) => add(item.start_date, 'Treatment', 'Radiotherapy', item.intent ?? '', index, 'treatment'))
+      observation.surgeries.forEach((item) => add(item.surgery_date, 'Treatment', 'Surgery', item.modality ?? '', index, 'treatment'))
+    })
+
+    const seen = new Set<string>()
+    return events
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .filter((event) => {
+        const key = `${event.date}|${event.category}|${event.label}|${event.detail}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+  }, [patient?.observations])
+  const patientJourney = useMemo(() => {
+    const groups = new Map<string, typeof clinicalCourse>()
+    clinicalCourse.forEach((event) => {
+      const key = event.date.slice(0, 10)
+      const events = groups.get(key) ?? []
+      events.push(event)
+      groups.set(key, events)
+    })
+    return [...groups.entries()].map(([date, events]) => ({ date, events }))
+  }, [clinicalCourse])
   const stagingTrend = useMemo(
     () =>
       filteredObservations.map((observation, index) => ({
@@ -541,6 +581,23 @@ export default function PatientDetailPage() {
     section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  function focusJourneyEvent(event: { observationIndex: number; targetId: string }) {
+    // Journey always spans the whole record, so clear filters before selecting its observation.
+    const next = new URLSearchParams(searchParams)
+    next.delete('site')
+    next.delete('draft')
+    if (event.observationIndex === 0) {
+      next.delete('observation')
+    } else {
+      next.set('observation', String(event.observationIndex))
+    }
+    next.delete('compare')
+    setSearchParams(next, { replace: true })
+    window.setTimeout(() => {
+      document.getElementById(event.targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
+  }
+
   function printRecord() {
     window.print()
   }
@@ -714,6 +771,65 @@ export default function PatientDetailPage() {
           </div>
         ) : null}
       </ClinicalCard>
+
+      <section className="panel patient-journey-panel" id="patient-journey">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Patient Journey</p>
+            <h3>Clinical record from diagnosis to latest follow-up</h3>
+          </div>
+          <span className="result-chip">{clinicalCourse.length} dated milestones</span>
+        </div>
+        {clinicalCourse.length ? (
+          <>
+            <p className="clinical-card-empty-copy">Select a milestone to open its observation and linked clinical section.</p>
+            <div className="journey-scroll" aria-label="Patient journey timeline">
+              <div className="journey-fishbone">
+                {patientJourney.map((group, groupIndex) => (
+                  <div className="journey-date-group" key={group.date}>
+                    <div className="journey-branch journey-branch-top">
+                      {group.events.filter((_, index) => (index + groupIndex) % 2 === 0).map((event, index) => (
+                        <button key={`${event.category}-${event.label}-${index}`} type="button" className={`journey-event journey-event-${event.category.toLowerCase().replace(/[^a-z]/g, '-')}`} onClick={() => focusJourneyEvent(event)}>
+                          <span>{event.category}</span>
+                          <strong>{event.label}</strong>
+                          {event.detail ? <small>{event.detail}</small> : null}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="journey-spine-node">
+                      <span className="journey-node" />
+                      <time>{formatDate(group.date)}</time>
+                    </div>
+                    <div className="journey-branch journey-branch-bottom">
+                      {group.events.filter((_, index) => (index + groupIndex) % 2 !== 0).map((event, index) => (
+                        <button key={`${event.category}-${event.label}-${index}`} type="button" className={`journey-event journey-event-${event.category.toLowerCase().replace(/[^a-z]/g, '-')}`} onClick={() => focusJourneyEvent(event)}>
+                          <span>{event.category}</span>
+                          <strong>{event.label}</strong>
+                          {event.detail ? <small>{event.detail}</small> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="section-nav patient-journey-events" aria-label="Patient journey milestones" hidden>
+              {clinicalCourse.map((event, index) => (
+                <button
+                  key={`${event.date}-${event.category}-${event.label}-${index}`}
+                  type="button"
+                  className="section-chip"
+                  onClick={() => focusJourneyEvent(event)}
+                >
+                  {formatDate(event.date)} · {event.category}: {event.label}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <EmptyState title="No dated journey milestones available" detail="Dated diagnosis, pathology, treatment, response, and follow-up records will appear here as they are documented." />
+        )}
+      </section>
 
       <section className="panel detail-toolbar-panel">
         <div className="detail-toolbar">
@@ -1337,16 +1453,41 @@ export default function PatientDetailPage() {
         <article className="panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Observation Rhythm</p>
-              <h3>Case activity over time</h3>
+              <p className="eyebrow">Clinical Course</p>
+              <h3>Recorded care milestones</h3>
             </div>
           </div>
           <div className="chart-box">
-            <ClinicalChart option={{
-              tooltip: { trigger: 'axis' }, grid: { left: 42, right: 18, top: 22, bottom: 34 },
-              xAxis: { type: 'category', data: observationTrend.map((entry) => entry.label) }, yAxis: { type: 'value', minInterval: 1 },
-              series: [{ type: 'line', smooth: true, data: observationTrend.map((entry) => entry.count), symbolSize: 7, lineStyle: { width: 3, color: '#1677c8' }, areaStyle: { color: '#1677c8', opacity: 0.22 }, itemStyle: { color: '#1677c8' } }],
-            }} />
+            {clinicalCourse.length ? (
+              <ClinicalChart option={{
+                tooltip: {
+                  trigger: 'item',
+                  formatter: (params) => {
+                    const point = Array.isArray(params) ? params[0] : params
+                    const event = clinicalCourse[point.dataIndex]
+                    return [`<strong>${event.label}</strong>`, event.category, formatDate(event.date), event.detail].filter(Boolean).join('<br/>')
+                  },
+                },
+                grid: { left: 94, right: 20, top: 26, bottom: 46 },
+                xAxis: {
+                  type: 'category',
+                  data: clinicalCourse.map((event) => formatDate(event.date)),
+                  axisLabel: { fontSize: 10, rotate: 28, interval: 0 },
+                  axisTick: { alignWithLabel: true },
+                },
+                yAxis: { type: 'category', data: ['Follow-up', 'Response', 'Treatment', 'Molecular', 'Pathology', 'Diagnosis'], axisLabel: { fontSize: 11 } },
+                series: [{
+                  type: 'scatter',
+                  symbolSize: 16,
+                  data: clinicalCourse.map((event, index) => ({
+                    value: [index, ['Follow-up', 'Response', 'Treatment', 'Molecular', 'Pathology', 'Diagnosis'].indexOf(event.category)],
+                    itemStyle: { color: { Diagnosis: '#8b5cf6', Pathology: '#f97316', Molecular: '#0ea5a4', Treatment: '#1677c8', Response: '#eab308', 'Follow-up': '#64748b' }[event.category] },
+                  })),
+                }],
+              }} />
+            ) : (
+              <EmptyState title="No dated milestones available" detail="The clinical course will appear as soon as dated diagnosis, pathology, treatment, response, or observation records are entered." />
+            )}
           </div>
         </article>
 

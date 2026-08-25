@@ -7,12 +7,14 @@ type ClinicalChartProps = {
   option: EChartsOption
   height?: number
   className?: string
+  onEvents?: Record<string, (params: unknown) => void>
 }
 
 export function ClinicalChart({
   option,
   height = 280,
   className,
+  onEvents,
 }: ClinicalChartProps) {
   const [isDark, setIsDark] = useState(() => document.documentElement.dataset.theme === 'dark')
   const chartRef = useRef<ReactECharts>(null)
@@ -66,6 +68,7 @@ export function ClinicalChart({
         ref={chartRef}
         className={className}
         option={exportOption}
+        onEvents={onEvents}
         theme={isDark ? 'dark' : undefined}
         style={{ height, width: '100%' }}
         notMerge
