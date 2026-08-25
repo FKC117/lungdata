@@ -125,6 +125,8 @@ function TreatmentResponseCard({ cycle, index }: { cycle: TreatmentCycle; index:
             <DataPoint label="Progression status date" value={formatDate(cycle.disease_progression_status_date)} />
             <DataPoint label="Survival status" value={cycle.survival_status} />
             <DataPoint label="Survival status date" value={formatDate(cycle.survival_status_date)} />
+            <DataPoint label="Progression-free survival (PFS)" value={cycle.progression_free_survival} />
+            <DataPoint label="Overall survival (OS)" value={cycle.overall_survival} />
           </div>
         </section>
         <section>
