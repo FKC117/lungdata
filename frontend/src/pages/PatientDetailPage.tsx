@@ -37,18 +37,6 @@ function hasChanged(left: string | number | null | undefined, right: string | nu
   return String(left ?? '').trim() !== String(right ?? '').trim()
 }
 
-function stageScore(value: string | null | undefined) {
-  if (!value) {
-    return 0
-  }
-  const normalized = value.toUpperCase()
-  if (normalized === 'X') {
-    return 0
-  }
-  const numeric = Number(normalized.replace(/[^0-9.]/g, ''))
-  return Number.isFinite(numeric) ? numeric : 0
-}
-
 function molecularResultCategory(status: string | null | undefined) {
   const normalized = status?.toLowerCase() ?? ''
   if (normalized.includes('negative') || normalized.includes('not detected') || normalized.includes('wild type')) {
@@ -401,19 +389,23 @@ export default function PatientDetailPage() {
       .map((section) => ({ ...section, items: section.items.filter((item) => item.value) }))
       .filter((section) => section.items.length)
   }, [patient])
-  const stagingTrend = useMemo(
+  const stagingRecords = useMemo(
     () =>
       filteredObservations.map((observation, index) => ({
-        label: `Obs ${index + 1}`,
-        clinical:
-          stageScore(observation.clinical_stagings[0]?.t) +
-          stageScore(observation.clinical_stagings[0]?.n) +
-          stageScore(observation.clinical_stagings[0]?.m),
-        pathological:
-          stageScore(observation.pathological_stagings[0]?.t) +
-          stageScore(observation.pathological_stagings[0]?.n) +
-          stageScore(observation.pathological_stagings[0]?.m),
-      })),
+        id: observation.id,
+        label: `Observation ${index + 1}`,
+        date: formatDate(observation.observed_at),
+        clinical: formatStage(
+          observation.clinical_stagings[0]?.t,
+          observation.clinical_stagings[0]?.n,
+          observation.clinical_stagings[0]?.m,
+        ),
+        pathological: formatStage(
+          observation.pathological_stagings[0]?.t,
+          observation.pathological_stagings[0]?.n,
+          observation.pathological_stagings[0]?.m,
+        ),
+      })).filter((record) => record.clinical || record.pathological),
     [filteredObservations],
   )
   const treatmentTrend = useMemo(
@@ -1503,26 +1495,49 @@ export default function PatientDetailPage() {
         <article className="panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Staging Progression</p>
-              <h3>Clinical versus pathological stage intensity</h3>
+              <p className="eyebrow">Staging Record</p>
+              <h3>Clinical and pathological TNM by visit</h3>
             </div>
           </div>
-          <div className="chart-box">
-            {stagingTrend.length ? (
-              <ClinicalChart option={{
-                tooltip: { trigger: 'axis' }, legend: { bottom: 0 },
-                grid: { left: 42, right: 18, top: 22, bottom: 46 },
-                xAxis: { type: 'category', data: stagingTrend.map((entry) => entry.label) },
-                yAxis: { type: 'value', minInterval: 1 },
-                series: [
-                  { name: 'Clinical stage score', type: 'line', smooth: true, data: stagingTrend.map((entry) => entry.clinical), symbolSize: 8, lineStyle: { width: 3, color: '#1677c8' }, itemStyle: { color: '#1677c8' } },
-                  { name: 'Pathological stage score', type: 'line', smooth: true, data: stagingTrend.map((entry) => entry.pathological), symbolSize: 8, lineStyle: { width: 3, color: '#f97316' }, itemStyle: { color: '#f97316' } },
-                ],
-              }} />
+          <div className="stage-record-list">
+            {stagingRecords.length ? (
+              <div className="stage-record-table-wrap">
+                <table className="stage-record-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Date</th>
+                      <th scope="col">Visit</th>
+                      <th scope="col">Clinical TNM</th>
+                      <th scope="col">Pathological TNM</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stagingRecords.map((record) => (
+                      <tr
+                        key={record.id}
+                        tabIndex={0}
+                        role="button"
+                        onClick={() => selectObservation(filteredObservations.findIndex((observation) => observation.id === record.id))}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            selectObservation(filteredObservations.findIndex((observation) => observation.id === record.id))
+                          }
+                        }}
+                      >
+                        <td>{record.date}</td>
+                        <td>{record.label}</td>
+                        <td>{record.clinical || 'Not recorded'}</td>
+                        <td>{record.pathological || 'Not recorded'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
               <EmptyState
-                title="No staging trend available"
-                detail="Stage progression will appear here when multiple filtered observations include staging data."
+                title="No staging records available"
+                detail="Clinical and pathological TNM values will appear here when they are recorded."
               />
             )}
           </div>

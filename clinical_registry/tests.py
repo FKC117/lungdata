@@ -1,7 +1,17 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 
-from clinical_registry.models import LegacyImportAnomaly
+from clinical_registry.models import (
+    AnalyticsAuditEvent,
+    ClinicalObservation,
+    ClinicalStaging,
+    LegacyImportAnomaly,
+    MolecularPathology,
+    Patient,
+    PatientHistory,
+    TreatmentCycle,
+)
 from clinical_registry.serializers import PatientEntrySerializer
 
 
@@ -67,3 +77,36 @@ class LegacyReviewAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["count"], 1)
         self.assertEqual(response.json()["results"][0]["missing_observation_id"], 8)
+
+
+class AnalyticsReadOnlyTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            username="analytics-admin", email="analytics@example.com", password="safe-test-password"
+        )
+        self.patient = Patient.objects.create(name="DUMMY-1", registry_id="DUMMY-1")
+        self.observation = ClinicalObservation.objects.create(
+            patient=self.patient,
+            observed_at=timezone.now(),
+            diagnosis_disease_group="NSCLC",
+            is_draft=False,
+        )
+        PatientHistory.objects.create(observation=self.observation, first_diagnosis_date="2026-01-01")
+        ClinicalStaging.objects.create(observation=self.observation, result="Stage IV")
+        MolecularPathology.objects.create(observation=self.observation, gene="EGFR", status="Positive")
+        TreatmentCycle.objects.create(
+            observation=self.observation,
+            current_chemo_protocol="Osimertinib",
+            chemo_starting_date="2026-01-10",
+            recist_1_result="PR",
+        )
+        draft_patient = Patient.objects.create(name="Draft only", registry_id="DRAFT-1")
+        ClinicalObservation.objects.create(patient=draft_patient, observed_at=timezone.now(), is_draft=True)
+
+    def test_summary_uses_published_patient_cohort_and_audits_access(self):
+        self.client.force_login(self.admin)
+        response = self.client.get("/api/analytics/summary/?diagnosis=NSCLC")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["kpis"]["total_patients"], 1)
+        self.assertEqual(response.json()["kpis"]["recorded_response"], 1)
+        self.assertEqual(AnalyticsAuditEvent.objects.filter(action="analytics_summary").count(), 1)

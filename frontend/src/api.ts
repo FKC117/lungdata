@@ -7,6 +7,34 @@ export interface DashboardSummary {
   draft_observations: number
 }
 
+export interface AnalyticsFilterOptions {
+  centers: Array<{ center_id: number; center__name: string }>
+  doctors: Array<{ doctor_id: number; doctor__name: string }>
+  diagnoses: string[]
+  stages: string[]
+  biomarkers: string[]
+  treatments: string[]
+  outcomes: string[]
+}
+
+export interface AnalyticsSummary {
+  kpis: Record<string, number | null>
+  definitions: Record<string, string>
+}
+
+export interface AnalyticsDistributions {
+  stage: Array<{ label: string; count: number }>
+  biomarker: Array<{ label: string; count: number }>
+  treatment: Array<{ label: string; count: number }>
+  response: Array<{ label: string; count: number }>
+  completeness: Array<{ label: string; count: number; total: number }>
+}
+
+export interface AnalyticsSurvival {
+  survival: Array<{ metric: string; available: number; median_days: number | null; values: number[] }>
+  definitions: Record<string, string>
+}
+
 export interface PatientDemographicsLookup {
   genders: string[]
   blood_groups: string[]
@@ -566,6 +594,35 @@ export async function logoutUser() {
 
 export function fetchDashboardSummary() {
   return request<DashboardSummary>('/api/dashboard/summary/')
+}
+
+function analyticsQuery(filters: Record<string, string>) {
+  const params = new URLSearchParams()
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value) params.set(key, value)
+  })
+  return params.toString()
+}
+
+export function fetchAnalyticsFilters(filters: Record<string, string> = {}) {
+  const query = analyticsQuery(filters)
+  return request<AnalyticsFilterOptions>(`/api/analytics/filters/${query ? `?${query}` : ''}`)
+}
+
+export function fetchAnalyticsSummary(filters: Record<string, string>) {
+  return request<AnalyticsSummary>(`/api/analytics/summary/?${analyticsQuery(filters)}`)
+}
+
+export function fetchAnalyticsDistributions(filters: Record<string, string>) {
+  return request<AnalyticsDistributions>(`/api/analytics/distributions/?${analyticsQuery(filters)}`)
+}
+
+export function fetchAnalyticsSurvival(filters: Record<string, string>) {
+  return request<AnalyticsSurvival>(`/api/analytics/survival/?${analyticsQuery(filters)}`)
+}
+
+export function buildAnalyticsExportUrl(filters: Record<string, string>) {
+  return `${API_BASE_URL}/api/analytics/export/?${analyticsQuery(filters)}`
 }
 
 export function fetchPatientDemographics(district = '', diseaseGroup = '') {

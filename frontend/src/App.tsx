@@ -19,6 +19,7 @@ const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'))
 const PatientEntryPage = lazy(() => import('./pages/PatientEntryPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const LegacyDraftReviewPage = lazy(() => import('./pages/LegacyDraftReviewPage'))
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'))
 
 function routeAuthenticatedUser(user: AuthUser, navigate: ReturnType<typeof useNavigate>) {
   if (user.default_redirect.startsWith('/admin')) {
@@ -72,6 +73,14 @@ function AppHeader({
             }
           >
             Patients
+          </NavLink>
+          <NavLink
+            to="/analytics"
+            className={({ isActive }) =>
+              isActive ? 'topnav-link topnav-link-active' : 'topnav-link'
+            }
+          >
+            Analytics
           </NavLink>
           <NavLink
             to="/patients/new"
@@ -134,6 +143,7 @@ function ProtectedRoutes({ role }: { role: AuthUser['role'] }) {
       <Route path="patients/new" element={<PatientEntryPage />} />
       <Route path="patients/:registryId/edit" element={<PatientEntryPage />} />
       <Route path="patients" element={<PatientSearchPage />} />
+      <Route path="analytics" element={<AnalyticsPage />} />
       <Route path="patients/:registryId" element={<PatientDetailPage />} />
       <Route
         path="legacy-review"

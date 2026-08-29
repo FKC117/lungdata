@@ -1,9 +1,11 @@
 import csv
+from collections import Counter
+from datetime import date
 
 from django.contrib.auth import authenticate, login, logout
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.db.models import BooleanField, CharField, Count, OuterRef, Prefetch, Q, Subquery
+from django.db.models import BooleanField, CharField, Count, Min, OuterRef, Prefetch, Q, Subquery
 from django.http import HttpResponse
 from rest_framework import generics, permissions, status
 from rest_framework.pagination import PageNumberPagination
@@ -19,6 +21,7 @@ from clinical_registry.access import (
 )
 from clinical_registry.models import (
     AlcoholHistoryOption,
+    AnalyticsAuditEvent,
     BloodGroupOption,
     ClinicalObservation,
     CovidStatusOption,
@@ -43,6 +46,10 @@ from clinical_registry.models import (
     SmokingStatusOption,
     SocioEconomicStatusOption,
     TuberculosisStatusOption,
+    ClinicalStaging,
+    Histopathology,
+    MolecularPathology,
+    TreatmentCycle,
 )
 from clinical_registry.serializers import (
     PatientDetailSerializer,
@@ -369,6 +376,191 @@ class DashboardSummaryAPIView(APIView):
             "draft_observations": observations_qs.filter(is_draft=True).count(),
         }
         return Response(data)
+
+
+class AnalyticsQueryMixin:
+    """Shared, read-only patient cohort builder for the analytics endpoints.
+
+    A cohort is one patient per row.  Date filtering uses the date of a published
+    clinical observation; clinical values use the most recently recorded nonblank
+    value for that patient.  Blank values are always reported as missing, never as
+    a negative result.
+    """
+
+    def get_cohort(self, request):
+        observations = scope_observations_for_user(
+            ClinicalObservation.objects.filter(deleted_at__isnull=True, is_draft=False),
+            request.user,
+        )
+        params = request.query_params
+        start, end = params.get("start_date"), params.get("end_date")
+        if start:
+            observations = observations.filter(observed_at__date__gte=start)
+        if end:
+            observations = observations.filter(observed_at__date__lte=end)
+        for parameter, field in (("center", "center_id"), ("doctor", "doctor_id")):
+            if params.get(parameter):
+                observations = observations.filter(**{field: params[parameter]})
+        if params.get("diagnosis"):
+            observations = observations.filter(diagnosis_disease_group__iexact=params["diagnosis"])
+        if params.get("stage"):
+            observations = observations.filter(clinical_stagings__result__iexact=params["stage"])
+        if params.get("biomarker"):
+            observations = observations.filter(molecular_pathologies__gene__iexact=params["biomarker"])
+        if params.get("treatment"):
+            observations = observations.filter(treatment_cycles__current_chemo_protocol__icontains=params["treatment"])
+        if params.get("outcome") == "progressed":
+            observations = observations.filter(treatment_cycles__disease_progression_status__icontains="progress")
+        elif params.get("outcome") == "deceased":
+            observations = observations.filter(treatment_cycles__survival_status__icontains="dead")
+        patient_ids = observations.values_list("patient_id", flat=True).distinct()
+        return Patient.objects.filter(id__in=patient_ids, deleted_at__isnull=True).distinct()
+
+    @staticmethod
+    def latest_nonblank(items, attribute):
+        values = [getattr(item, attribute) for item in items if getattr(item, attribute, None)]
+        return values[-1] if values else ""
+
+    def patient_rows(self, cohort):
+        observations = ClinicalObservation.objects.filter(
+            patient__in=cohort, deleted_at__isnull=True, is_draft=False
+        ).select_related("center", "doctor").prefetch_related(
+            "history", "clinical_stagings", "histopathologies", "molecular_pathologies", "treatment_cycles"
+        ).order_by("patient_id", "observed_at", "id")
+        grouped = {}
+        for observation in observations:
+            grouped.setdefault(observation.patient_id, []).append(observation)
+        rows = []
+        for patient in cohort:
+            records = grouped.get(patient.id, [])
+            stages = [stage for record in records for stage in record.clinical_stagings.all()]
+            molecular = [item for record in records for item in record.molecular_pathologies.all()]
+            cycles = [item for record in records for item in record.treatment_cycles.all()]
+            histories = [record.history for record in records if hasattr(record, "history")]
+            diagnosis_date = min((item.first_diagnosis_date for item in histories if item.first_diagnosis_date), default=None)
+            treatment_start = min((item.chemo_starting_date for item in cycles if item.chemo_starting_date), default=None)
+            progression_dates = [item.disease_progression_status_date for item in cycles if item.disease_progression_status_date]
+            death_dates = [item.survival_status_date for item in cycles if item.survival_status_date and "dead" in item.survival_status.lower()]
+            last_follow_up = max((item.observed_at.date() for item in records if item.observed_at), default=None)
+            response = self.latest_nonblank(cycles, "recist_1_result") or self.latest_nonblank(cycles, "irecist_result")
+            rows.append({
+                "patient": patient, "records": records,
+                "diagnosis": self.latest_nonblank(records, "diagnosis_disease_group"),
+                "stage": self.latest_nonblank(stages, "result"),
+                "pathology": self.latest_nonblank([x for r in records for x in r.histopathologies.all()], "histology_type"),
+                "biomarker": self.latest_nonblank(molecular, "gene"),
+                "treatment": self.latest_nonblank(cycles, "current_chemo_protocol"),
+                "response": response, "diagnosis_date": diagnosis_date,
+                "treatment_start": treatment_start, "progression_date": min(progression_dates, default=None),
+                "death_date": min(death_dates, default=None), "last_follow_up": last_follow_up,
+                "active_treatment": any(not cycle.chemo_end_date for cycle in cycles),
+            })
+        return rows
+
+    @staticmethod
+    def distribution(rows, key):
+        counts = Counter(row[key] or "Not recorded" for row in rows)
+        return [{"label": label, "count": count} for label, count in counts.most_common()]
+
+    def definitions(self):
+        return {
+            "cohort": "One patient with at least one published clinical observation matching the filters.",
+            "date_range": "Filters on published clinical-observation date, inclusive.",
+            "response_rate": "Patients with a recorded RECIST 1.1 or iRECIST result divided by patients with a treatment record.",
+            "pfs": "Days from first chemotherapy start to recorded progression or death; censored at last published observation when neither is recorded.",
+            "os": "Days from first diagnosis to recorded death; censored at last published observation when death is not recorded.",
+            "missing": "Blank, unknown, and unavailable fields remain Not recorded and are excluded from outcome denominators.",
+        }
+
+    def audit(self, request, action):
+        AnalyticsAuditEvent.objects.create(
+            user=request.user,
+            action=action,
+            filters={key: value for key, value in request.query_params.items() if value},
+        )
+
+
+class AnalyticsFiltersAPIView(AnalyticsQueryMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        self.audit(request, "analytics_filters")
+        cohort = self.get_cohort(request)
+        observations = ClinicalObservation.objects.filter(patient__in=cohort, deleted_at__isnull=True, is_draft=False)
+        return Response({
+            "centers": list(observations.exclude(center__isnull=True).values("center_id", "center__name").distinct().order_by("center__name")),
+            "doctors": list(observations.exclude(doctor__isnull=True).values("doctor_id", "doctor__name").distinct().order_by("doctor__name")),
+            "diagnoses": list(observations.exclude(diagnosis_disease_group="").values_list("diagnosis_disease_group", flat=True).distinct().order_by("diagnosis_disease_group")),
+            "stages": list(ClinicalStaging.objects.filter(observation__in=observations).exclude(result="").values_list("result", flat=True).distinct().order_by("result")),
+            "biomarkers": list(MolecularPathology.objects.filter(observation__in=observations).exclude(gene="").values_list("gene", flat=True).distinct().order_by("gene")),
+            "treatments": list(TreatmentCycle.objects.filter(observation__in=observations).exclude(current_chemo_protocol="").values_list("current_chemo_protocol", flat=True).distinct().order_by("current_chemo_protocol")),
+            "outcomes": ["progressed", "deceased"],
+        })
+
+
+class AnalyticsSummaryAPIView(AnalyticsQueryMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        self.audit(request, "analytics_summary")
+        rows = self.patient_rows(self.get_cohort(request))
+        treated = [row for row in rows if row["treatment"]]
+        responded = [row for row in treated if row["response"]]
+        return Response({"kpis": {
+            "total_patients": len(rows),
+            "new_diagnoses": sum(bool(row["diagnosis_date"]) for row in rows),
+            "active_treatment": sum(row["active_treatment"] for row in rows),
+            "recorded_response": len(responded),
+            "response_rate": round(len(responded) / len(treated) * 100, 1) if treated else None,
+            "pfs_available": sum(bool(row["treatment_start"] and row["last_follow_up"]) for row in rows),
+            "os_available": sum(bool(row["diagnosis_date"] and row["last_follow_up"]) for row in rows),
+        }, "definitions": self.definitions()})
+
+
+class AnalyticsDistributionAPIView(AnalyticsQueryMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        self.audit(request, "analytics_distributions")
+        rows = self.patient_rows(self.get_cohort(request))
+        completeness = [
+            {"label": label, "count": sum(bool(row[key]) for row in rows), "total": len(rows)}
+            for label, key in [("Diagnosis", "diagnosis"), ("Stage", "stage"), ("Pathology", "pathology"), ("Biomarker", "biomarker"), ("Treatment", "treatment"), ("Response", "response"), ("Diagnosis date", "diagnosis_date")]
+        ]
+        return Response({"stage": self.distribution(rows, "stage"), "biomarker": self.distribution(rows, "biomarker"), "treatment": self.distribution(rows, "treatment"), "response": self.distribution(rows, "response"), "completeness": completeness})
+
+
+class AnalyticsSurvivalAPIView(AnalyticsQueryMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        self.audit(request, "analytics_survival")
+        rows = self.patient_rows(self.get_cohort(request))
+        result = []
+        for metric, start_key, event_key in (("pfs", "treatment_start", "progression_date"), ("os", "diagnosis_date", "death_date")):
+            values = []
+            for row in rows:
+                start = row[start_key]
+                end = row[event_key] or row["last_follow_up"]
+                if start and end and end >= start:
+                    values.append((end - start).days)
+            result.append({"metric": metric, "available": len(values), "median_days": sorted(values)[len(values) // 2] if values else None, "values": values})
+        return Response({"survival": result, "definitions": self.definitions()})
+
+
+class AnalyticsExportAPIView(AnalyticsQueryMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        self.audit(request, "analytics_export")
+        rows = self.patient_rows(self.get_cohort(request))
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="analytics_cohort_export.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["Registry ID", "Diagnosis", "Stage", "Pathology", "Biomarker", "Treatment", "Response", "Diagnosis date", "Treatment start", "Progression date", "Death date", "Last follow-up"])
+        for row in rows:
+            writer.writerow([row["patient"].registry_id, row["diagnosis"], row["stage"], row["pathology"], row["biomarker"], row["treatment"], row["response"], row["diagnosis_date"], row["treatment_start"], row["progression_date"], row["death_date"], row["last_follow_up"]])
+        return response
 
 
 class CsrfCookieAPIView(APIView):

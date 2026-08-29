@@ -122,6 +122,33 @@
   align-self: center;
 }
 
+.analytics-hero { grid-template-columns: 1fr auto; }
+.analytics-filters { padding: 1.25rem; }
+.analytics-filter-grid, .analytics-kpis, .analytics-chart-grid { display: grid; gap: .8rem; }
+.analytics-filter-grid { grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); }
+.analytics-filter { display: grid; gap: .35rem; color: #4f6578; font-size: .8rem; font-weight: 700; text-transform: capitalize; }
+.analytics-filter select, .analytics-filter input { min-height: 2.55rem; border: 1px solid rgba(15, 76, 129, .18); border-radius: 9px; padding: .45rem .55rem; background: #fff; color: #173b5f; }
+.analytics-kpis { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
+.analytics-kpis .metric-card { padding: 1rem; display: grid; gap: .45rem; }
+.analytics-kpis strong { font-size: 1.7rem; color: #0f3557; }
+.analytics-kpis span { color: #4f6578; font-size: .84rem; }
+.analytics-chart-grid { grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
+.analytics-chart { padding: 1rem; }
+.analytics-chart-heading { align-items: flex-start; gap: .75rem; }
+.analytics-chart-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
+.analytics-chart-controls label, .analytics-missing-toggle { color: #4f6578; font-size: .73rem; font-weight: 700; }
+.analytics-chart-controls label { display: grid; gap: .2rem; }
+.analytics-chart-controls select { min-height: 1.9rem; border: 1px solid rgba(15, 76, 129, .18); border-radius: 7px; padding: .2rem .35rem; background: #fff; color: #173b5f; }
+.analytics-missing-toggle { display: inline-flex; align-items: center; gap: .35rem; margin: -.1rem 0 .35rem; }
+.analytics-distribution-table { max-height: 230px; }
+.analytics-table-wrap { overflow-x: auto; }
+.analytics-completeness { display: grid; gap: .9rem; padding: .5rem 1.1rem 1.2rem; }
+.analytics-completeness > div { display: grid; grid-template-columns: 1fr auto; gap: .3rem .8rem; font-size: .88rem; }
+.analytics-completeness > div > div { grid-column: 1 / -1; height: .45rem; background: #e5edf3; border-radius: 99px; overflow: hidden; }
+.analytics-completeness i { display: block; height: 100%; background: #0f766e; border-radius: inherit; }
+.analytics-definitions { padding: 1.2rem 1.35rem; }
+.analytics-definitions p { color: #4f6578; }
+
 .registry-search-hero {
   grid-template-columns: minmax(17rem, 0.7fr) minmax(36rem, 1.3fr);
   gap: 2rem;
@@ -1858,6 +1885,62 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
   align-items: start;
+}
+
+.stage-record-list {
+  overflow: hidden;
+}
+
+.stage-record-table-wrap {
+  width: 100%;
+  border: 1px solid rgba(116, 204, 255, 0.16);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+.stage-record-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  color: var(--text-primary);
+}
+
+.stage-record-table th,
+.stage-record-table td {
+  padding: 0.85rem 0.95rem;
+  border-bottom: 1px solid rgba(116, 204, 255, 0.13);
+  text-align: left;
+}
+
+.stage-record-table th {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stage-record-table td {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.stage-record-table tbody tr {
+  cursor: pointer;
+}
+
+.stage-record-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.stage-record-table tbody tr:hover,
+.stage-record-table tbody tr:focus {
+  outline: none;
+  background: rgba(18, 49, 73, 0.88);
+}
+
+.stage-record-table tbody tr:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(67, 241, 209, 0.6);
 }
 
 .clinical-card {

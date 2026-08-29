@@ -466,6 +466,26 @@ class LegacyImportAnomaly(TimeStampedModel):
         return f"{self.source_table} row {self.legacy_row_id}: {self.reason}"
 
 
+class AnalyticsAuditEvent(TimeStampedModel):
+    """Non-clinical audit trail for analytics access and cohort exports."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="analytics_audit_events",
+    )
+    action = models.CharField(max_length=64)
+    filters = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = "clinical_analytics_audit_events"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.action} by {self.user_id or 'unknown'}"
+
+
 class LegacyNamedRecord(TimeStampedModel):
     legacy_id = models.PositiveBigIntegerField(unique=True)
     name = models.CharField(max_length=191)
