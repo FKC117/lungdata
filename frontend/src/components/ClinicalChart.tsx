@@ -8,6 +8,8 @@ type ClinicalChartProps = {
   height?: number
   className?: string
   onEvents?: Record<string, (params: unknown) => void>
+  exportTitle?: string
+  exportTitleLayout?: 'bar' | 'donut'
 }
 
 export function ClinicalChart({
@@ -15,6 +17,8 @@ export function ClinicalChart({
   height = 280,
   className,
   onEvents,
+  exportTitle,
+  exportTitleLayout = 'bar',
 }: ClinicalChartProps) {
   const [isDark, setIsDark] = useState(() => document.documentElement.dataset.theme === 'dark')
   const chartRef = useRef<ReactECharts>(null)
@@ -39,6 +43,21 @@ export function ClinicalChart({
 
     // ECharts otherwise includes the current axis-pointer selection in the PNG.
     chart.dispatchAction({ type: 'hideTip' })
+    if (exportTitle) {
+      const titleLayout: EChartsOption = exportTitleLayout === 'donut'
+        ? { series: [{ center: ['50%', '48%'] }] }
+        : { grid: { top: 52 } }
+      chart.setOption({
+        ...titleLayout,
+        graphic: [{
+          id: 'export-chart-title',
+          type: 'text',
+          left: 12,
+          top: 10,
+          style: { text: exportTitle, fill: isDark ? '#e8f5ff' : '#16324a', font: '600 16px sans-serif' },
+        }],
+      })
+    }
     window.requestAnimationFrame(() => {
       const link = document.createElement('a')
       link.href = chart.getDataURL({
@@ -47,8 +66,17 @@ export function ClinicalChart({
         backgroundColor: exportBackground,
         excludeComponents: ['toolbox'],
       })
-      link.download = 'lung-panel-chart.png'
+      link.download = `${(exportTitle || 'lung-panel-chart').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`
       link.click()
+      if (exportTitle) {
+        const restoreLayout: EChartsOption = exportTitleLayout === 'donut'
+          ? { series: option.series }
+          : { grid: option.grid }
+        chart.setOption({
+          ...restoreLayout,
+          graphic: [{ id: 'export-chart-title', $action: 'remove' }],
+        })
+      }
     })
   }
 

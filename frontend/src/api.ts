@@ -24,10 +24,53 @@ export interface AnalyticsSummary {
 
 export interface AnalyticsDistributions {
   stage: Array<{ label: string; count: number }>
+  histopathology: Array<{ label: string; count: number }>
+  grade: Array<{ label: string; count: number }>
+  pathological_stage: Array<{ label: string; count: number }>
+  pathological_margin: Array<{ label: string; count: number }>
+  pathological_lvsi: Array<{ label: string; count: number }>
+  pathological_pni: Array<{ label: string; count: number }>
+  primary_site: Array<{ label: string; count: number }>
+  diagnosis_subgroup: Array<{ label: string; count: number }>
+  diagnosis_laterality: Array<{ label: string; count: number }>
+  metastatic_site: Array<{ label: string; count: number }>
   biomarker: Array<{ label: string; count: number }>
+  molecular_status: Array<{ label: string; count: number }>
+  molecular_exon: Array<{ label: string; count: number }>
+  molecular_method: Array<{ label: string; count: number }>
+  molecular_specimen: Array<{ label: string; count: number }>
+  ihc_marker: Array<{ label: string; count: number }>
+  cancer_marker: Array<{ label: string; count: number }>
   treatment: Array<{ label: string; count: number }>
+  treatment_line: Array<{ label: string; count: number }>
+  treatment_modality: Array<{ label: string; count: number }>
   response: Array<{ label: string; count: number }>
+  progression_status: Array<{ label: string; count: number }>
+  survival_status: Array<{ label: string; count: number }>
+  progression_site: Array<{ label: string; count: number }>
+  radiotherapy_intent: Array<{ label: string; count: number }>
+  radiotherapy_site: Array<{ label: string; count: number }>
+  radiotherapy_modality: Array<{ label: string; count: number }>
+  surgery_modality: Array<{ label: string; count: number }>
+  surgery_laterality: Array<{ label: string; count: number }>
+  smoking_status: Array<{ label: string; count: number }>
+  alcohol_history: Array<{ label: string; count: number }>
+  comorbidity: Array<{ label: string; count: number }>
+  gender: Array<{ label: string; count: number }>
+  district: Array<{ label: string; count: number }>
+  socio_economic_status: Array<{ label: string; count: number }>
+  patient_type: Array<{ label: string; count: number }>
+  tb_status: Array<{ label: string; count: number }>
+  covid_status: Array<{ label: string; count: number }>
   completeness: Array<{ label: string; count: number; total: number }>
+}
+
+export interface AnalyticsFacet {
+  subject: string
+  measure: string
+  unit: string
+  items: Array<{ label: string; count: number }>
+  filters: Record<string, string[]>
 }
 
 export interface AnalyticsSurvival {
@@ -615,6 +658,12 @@ export function fetchAnalyticsSummary(filters: Record<string, string>) {
 
 export function fetchAnalyticsDistributions(filters: Record<string, string>) {
   return request<AnalyticsDistributions>(`/api/analytics/distributions/?${analyticsQuery(filters)}`)
+}
+
+export function fetchAnalyticsFacet(subject: string, filters: Record<string, string>) {
+  const params = new URLSearchParams(analyticsQuery(filters))
+  params.set('subject', subject)
+  return request<AnalyticsFacet>(`/api/analytics/facet/?${params.toString()}`)
 }
 
 export function fetchAnalyticsSurvival(filters: Record<string, string>) {

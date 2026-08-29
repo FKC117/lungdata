@@ -122,7 +122,11 @@
   align-self: center;
 }
 
-.analytics-hero { grid-template-columns: 1fr auto; }
+.analytics-hero { grid-template-columns: 1fr auto; gap: 1rem; min-height: 0; padding: .85rem 1.35rem; }
+.analytics-hero .eyebrow { margin-bottom: .25rem; font-size: .76rem; }
+.analytics-hero .hero-copy h2 { max-width: none; font-size: clamp(1.35rem, 1.8vw, 1.7rem); margin-bottom: .2rem; white-space: nowrap; }
+.analytics-hero .hero-text { font-size: .86rem; line-height: 1.35; }
+.analytics-hero .secondary-button { padding: .6rem .85rem; }
 .analytics-filters { padding: 1.25rem; }
 .analytics-filter-grid, .analytics-kpis, .analytics-chart-grid { display: grid; gap: .8rem; }
 .analytics-filter-grid { grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); }
@@ -132,7 +136,15 @@
 .analytics-kpis .metric-card { padding: 1rem; display: grid; gap: .45rem; }
 .analytics-kpis strong { font-size: 1.7rem; color: #0f3557; }
 .analytics-kpis span { color: #4f6578; font-size: .84rem; }
-.analytics-chart-grid { grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
+.analytics-chart-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.analytics-chart-section { display: grid; gap: .7rem; }
+.analytics-chart-section > h3 { margin: 0; color: #173b5f; font-size: 1rem; }
+.analytics-faceted-chart { display: grid; gap: .45rem; min-width: 0; }
+.analytics-facet-heading { display: flex; justify-content: flex-end; gap: .5rem; align-items: center; min-height: 1.9rem; }
+.analytics-facet-heading > span { color: #5c7183; font-size: .72rem; white-space: nowrap; }
+.analytics-facet-filters { display: flex; justify-content: flex-end; gap: .4rem; flex-wrap: wrap; }
+.analytics-facet-filters label { display: grid; gap: .18rem; color: #4f6578; font-size: .7rem; font-weight: 700; text-transform: capitalize; }
+.analytics-facet-filters select { min-height: 1.85rem; max-width: 8.25rem; border: 1px solid rgba(15, 76, 129, .18); border-radius: 7px; padding: .18rem .3rem; background: #fff; color: #173b5f; }
 .analytics-chart { padding: 1rem; }
 .analytics-chart-heading { align-items: flex-start; gap: .75rem; }
 .analytics-chart-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
@@ -140,7 +152,20 @@
 .analytics-chart-controls label { display: grid; gap: .2rem; }
 .analytics-chart-controls select { min-height: 1.9rem; border: 1px solid rgba(15, 76, 129, .18); border-radius: 7px; padding: .2rem .35rem; background: #fff; color: #173b5f; }
 .analytics-missing-toggle { display: inline-flex; align-items: center; gap: .35rem; margin: -.1rem 0 .35rem; }
-.analytics-distribution-table { max-height: 230px; }
+.analytics-distribution-table { position: relative; overflow: hidden; }
+.analytics-distribution-table .registry-table { min-width: 0; table-layout: fixed; }
+.analytics-distribution-table .registry-table th,
+.analytics-distribution-table .registry-table td { padding: .7rem .55rem; }
+.analytics-distribution-table .registry-table th:first-child,
+.analytics-distribution-table .registry-table td:first-child { width: 55%; overflow-wrap: anywhere; }
+.analytics-distribution-table .registry-table th:nth-child(2),
+.analytics-distribution-table .registry-table th:nth-child(3),
+.analytics-distribution-table .registry-table td:nth-child(2),
+.analytics-distribution-table .registry-table td:nth-child(3) { width: 22.5%; text-align: right; white-space: nowrap; }
+.analytics-table-download { display: inline-flex; align-items: center; gap: .35rem; float: right; margin: -.1rem 0 .4rem; border: 0; background: transparent; color: #0f766e; cursor: pointer; font: inherit; font-size: .76rem; font-weight: 700; }
+@media (max-width: 1180px) { .analytics-chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .analytics-chart-grid { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .analytics-hero .hero-copy h2 { white-space: normal; } }
 .analytics-table-wrap { overflow-x: auto; }
 .analytics-completeness { display: grid; gap: .9rem; padding: .5rem 1.1rem 1.2rem; }
 .analytics-completeness > div { display: grid; grid-template-columns: 1fr auto; gap: .3rem .8rem; font-size: .88rem; }

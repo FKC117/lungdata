@@ -49,6 +49,8 @@ from clinical_registry.models import (
     ClinicalStaging,
     Histopathology,
     MolecularPathology,
+    RadiotherapySchedule,
+    Surgery,
     TreatmentCycle,
 )
 from clinical_registry.serializers import (
@@ -425,7 +427,23 @@ class AnalyticsQueryMixin:
         observations = ClinicalObservation.objects.filter(
             patient__in=cohort, deleted_at__isnull=True, is_draft=False
         ).select_related("center", "doctor").prefetch_related(
-            "history", "clinical_stagings", "histopathologies", "molecular_pathologies", "treatment_cycles"
+            "history__smoking_histories",
+            "history__tb_histories",
+            "history__covid_histories",
+            "clinical_stagings",
+            "pathological_stagings",
+            "pathological_staging_details",
+            "histopathologies",
+            "molecular_pathologies",
+            "cancer_markers",
+            "metastatic_sites",
+            "comorbidities",
+            "ihc_panels__details",
+            "treatment_cycles__chemotherapy_modalities",
+            "treatment_cycles__progression_sites",
+            "radiotherapy_schedules__sites",
+            "radiotherapy_schedules__modalities",
+            "surgeries__lateralities",
         ).order_by("patient_id", "observed_at", "id")
         grouped = {}
         for observation in observations:
@@ -434,9 +452,26 @@ class AnalyticsQueryMixin:
         for patient in cohort:
             records = grouped.get(patient.id, [])
             stages = [stage for record in records for stage in record.clinical_stagings.all()]
+            pathological_stages = [stage for record in records for stage in record.pathological_stagings.all()]
+            pathological_details = [detail for record in records for detail in record.pathological_staging_details.all()]
+            histopathologies = [item for record in records for item in record.histopathologies.all()]
             molecular = [item for record in records for item in record.molecular_pathologies.all()]
             cycles = [item for record in records for item in record.treatment_cycles.all()]
             histories = [record.history for record in records if hasattr(record, "history")]
+            smoking = [item for history in histories for item in history.smoking_histories.all()]
+            tb_histories = [item for history in histories for item in history.tb_histories.all()]
+            covid_histories = [item for history in histories for item in history.covid_histories.all()]
+            metastatic_sites = [item for record in records for item in record.metastatic_sites.all()]
+            comorbidities = [item for record in records for item in record.comorbidities.all()]
+            cancer_markers = [item for record in records for item in record.cancer_markers.all()]
+            radiotherapy = [item for record in records for item in record.radiotherapy_schedules.all()]
+            surgeries = [item for record in records for item in record.surgeries.all()]
+            treatment_modalities = [item for cycle in cycles for item in cycle.chemotherapy_modalities.all()]
+            progression_sites = [item for cycle in cycles for item in cycle.progression_sites.all()]
+            radiotherapy_sites = [item for schedule in radiotherapy for item in schedule.sites.all()]
+            radiotherapy_modalities = [item for schedule in radiotherapy for item in schedule.modalities.all()]
+            surgical_lateralities = [item for surgery in surgeries for item in surgery.lateralities.all()]
+            ihc_details = [item for record in records for panel in record.ihc_panels.all() for item in panel.details.all()]
             diagnosis_date = min((item.first_diagnosis_date for item in histories if item.first_diagnosis_date), default=None)
             treatment_start = min((item.chemo_starting_date for item in cycles if item.chemo_starting_date), default=None)
             progression_dates = [item.disease_progression_status_date for item in cycles if item.disease_progression_status_date]
@@ -446,11 +481,49 @@ class AnalyticsQueryMixin:
             rows.append({
                 "patient": patient, "records": records,
                 "diagnosis": self.latest_nonblank(records, "diagnosis_disease_group"),
+                "primary_site": self.latest_nonblank(records, "diagnosis_primary_site"),
+                "diagnosis_subgroup": self.latest_nonblank(records, "diagnosis_subgroup"),
+                "diagnosis_laterality": self.latest_nonblank(records, "diagnosis_laterality") or self.latest_nonblank(records, "diagnosis_laterility"),
                 "stage": self.latest_nonblank(stages, "result"),
-                "pathology": self.latest_nonblank([x for r in records for x in r.histopathologies.all()], "histology_type"),
+                "pathological_stage": self.latest_nonblank(pathological_stages, "result"),
+                "pathological_margin": self.latest_nonblank(pathological_details, "margin"),
+                "pathological_lvsi": self.latest_nonblank(pathological_details, "lvsi"),
+                "pathological_pni": self.latest_nonblank(pathological_details, "pni"),
+                "pathology": (
+                    self.latest_nonblank(histopathologies, "histology_type")
+                    or self.latest_nonblank(histopathologies, "detail")
+                ),
+                "grade": self.latest_nonblank(records, "grade"),
                 "biomarker": self.latest_nonblank(molecular, "gene"),
+                "molecular_status": self.latest_nonblank(molecular, "status"),
+                "molecular_exon": self.latest_nonblank(molecular, "exon"),
+                "molecular_method": self.latest_nonblank(molecular, "method"),
+                "molecular_specimen": self.latest_nonblank(molecular, "specimen"),
+                "ihc_marker": self.latest_nonblank(ihc_details, "marker_type"),
+                "ki67": self.latest_nonblank(pathological_details, "ki67"),
+                "cancer_marker": self.latest_nonblank(cancer_markers, "name"),
                 "treatment": self.latest_nonblank(cycles, "current_chemo_protocol"),
+                "treatment_line": self.latest_nonblank(cycles, "line_of_treatment"),
+                "treatment_modality": self.latest_nonblank(treatment_modalities, "detail"),
                 "response": response, "diagnosis_date": diagnosis_date,
+                "progression_status": self.latest_nonblank(cycles, "disease_progression_status"),
+                "survival_status": self.latest_nonblank(cycles, "survival_status"),
+                "metastatic_site": self.latest_nonblank(metastatic_sites, "value"),
+                "progression_site": self.latest_nonblank(progression_sites, "value"),
+                "radiotherapy_intent": self.latest_nonblank(radiotherapy, "intent"),
+                "radiotherapy_site": self.latest_nonblank(radiotherapy_sites, "value"),
+                "radiotherapy_modality": self.latest_nonblank(radiotherapy_modalities, "value"),
+                "surgery_modality": self.latest_nonblank(surgeries, "modality"),
+                "surgery_laterality": self.latest_nonblank(surgical_lateralities, "value"),
+                "smoking_status": self.latest_nonblank(smoking, "status"),
+                "comorbidity": self.latest_nonblank(comorbidities, "detail"),
+                "gender": patient.gender,
+                "district": patient.district,
+                "socio_economic_status": patient.socio_economic_status,
+                "patient_type": patient.patient_type,
+                "alcohol_history": self.latest_nonblank(histories, "alcohol_history") or self.latest_nonblank(histories, "h_o_alcoholism"),
+                "tb_status": self.latest_nonblank(tb_histories, "status"),
+                "covid_status": self.latest_nonblank(covid_histories, "status"),
                 "treatment_start": treatment_start, "progression_date": min(progression_dates, default=None),
                 "death_date": min(death_dates, default=None), "last_follow_up": last_follow_up,
                 "active_treatment": any(not cycle.chemo_end_date for cycle in cycles),
@@ -527,7 +600,98 @@ class AnalyticsDistributionAPIView(AnalyticsQueryMixin, APIView):
             {"label": label, "count": sum(bool(row[key]) for row in rows), "total": len(rows)}
             for label, key in [("Diagnosis", "diagnosis"), ("Stage", "stage"), ("Pathology", "pathology"), ("Biomarker", "biomarker"), ("Treatment", "treatment"), ("Response", "response"), ("Diagnosis date", "diagnosis_date")]
         ]
-        return Response({"stage": self.distribution(rows, "stage"), "biomarker": self.distribution(rows, "biomarker"), "treatment": self.distribution(rows, "treatment"), "response": self.distribution(rows, "response"), "completeness": completeness})
+        return Response({
+            "stage": self.distribution(rows, "stage"),
+            "histopathology": self.distribution(rows, "pathology"),
+            "grade": self.distribution(rows, "grade"),
+            "pathological_stage": self.distribution(rows, "pathological_stage"),
+            "pathological_margin": self.distribution(rows, "pathological_margin"),
+            "pathological_lvsi": self.distribution(rows, "pathological_lvsi"),
+            "pathological_pni": self.distribution(rows, "pathological_pni"),
+            "primary_site": self.distribution(rows, "primary_site"),
+            "diagnosis_subgroup": self.distribution(rows, "diagnosis_subgroup"),
+            "diagnosis_laterality": self.distribution(rows, "diagnosis_laterality"),
+            "metastatic_site": self.distribution(rows, "metastatic_site"),
+            "biomarker": self.distribution(rows, "biomarker"),
+            "molecular_status": self.distribution(rows, "molecular_status"),
+            "molecular_exon": self.distribution(rows, "molecular_exon"),
+            "molecular_method": self.distribution(rows, "molecular_method"),
+            "molecular_specimen": self.distribution(rows, "molecular_specimen"),
+            "ihc_marker": self.distribution(rows, "ihc_marker"),
+            "cancer_marker": self.distribution(rows, "cancer_marker"),
+            "treatment": self.distribution(rows, "treatment"),
+            "treatment_line": self.distribution(rows, "treatment_line"),
+            "treatment_modality": self.distribution(rows, "treatment_modality"),
+            "response": self.distribution(rows, "response"),
+            "progression_status": self.distribution(rows, "progression_status"),
+            "survival_status": self.distribution(rows, "survival_status"),
+            "progression_site": self.distribution(rows, "progression_site"),
+            "radiotherapy_intent": self.distribution(rows, "radiotherapy_intent"),
+            "radiotherapy_site": self.distribution(rows, "radiotherapy_site"),
+            "radiotherapy_modality": self.distribution(rows, "radiotherapy_modality"),
+            "surgery_modality": self.distribution(rows, "surgery_modality"),
+            "surgery_laterality": self.distribution(rows, "surgery_laterality"),
+            "smoking_status": self.distribution(rows, "smoking_status"),
+            "alcohol_history": self.distribution(rows, "alcohol_history"),
+            "comorbidity": self.distribution(rows, "comorbidity"),
+            "gender": self.distribution(rows, "gender"),
+            "district": self.distribution(rows, "district"),
+            "socio_economic_status": self.distribution(rows, "socio_economic_status"),
+            "patient_type": self.distribution(rows, "patient_type"),
+            "tb_status": self.distribution(rows, "tb_status"),
+            "covid_status": self.distribution(rows, "covid_status"),
+            "completeness": completeness,
+        })
+
+
+class AnalyticsFacetAPIView(AnalyticsQueryMixin, APIView):
+    """Event-level drill-downs for clinical domains with meaningful dimensions."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    SUBJECTS = {
+        "histopathology": (Histopathology, "detail", {"method": "histology_type", "site": "site"}),
+        "molecular": (MolecularPathology, "status", {"method": "method", "gene": "gene"}),
+        "treatment": (TreatmentCycle, "current_chemo_protocol", {"line": "line_of_treatment", "modality": "chemotherapy_modalities__detail"}),
+        "radiotherapy": (RadiotherapySchedule, "intent", {"site": "sites__value", "modality": "modalities__value"}),
+        "surgery": (Surgery, "modality", {"laterality": "lateralities__value"}),
+    }
+
+    def get(self, request):
+        subject = request.query_params.get("subject", "")
+        definition = self.SUBJECTS.get(subject)
+        if not definition:
+            return Response({"detail": "Unknown analytics subject."}, status=status.HTTP_400_BAD_REQUEST)
+        model, measure, dimensions = definition
+        self.audit(request, f"analytics_facet_{subject}")
+        base = model.objects.filter(
+            observation__patient__in=self.get_cohort(request),
+            observation__deleted_at__isnull=True,
+            observation__is_draft=False,
+        )
+        queryset = base
+        for parameter, lookup in dimensions.items():
+            value = (request.query_params.get(parameter) or "").strip()
+            if value:
+                queryset = queryset.filter(**{lookup: value})
+        items = list(
+            queryset.exclude(**{measure: ""})
+            .values(measure)
+            .annotate(count=Count("id", distinct=True))
+            .order_by("-count", measure)
+        )
+        return Response({
+            "subject": subject,
+            "measure": measure,
+            "unit": "clinical records",
+            "items": [{"label": item[measure], "count": item["count"]} for item in items],
+            "filters": {
+                parameter: list(
+                    base.exclude(**{lookup: ""}).values_list(lookup, flat=True).distinct().order_by(lookup)
+                )
+                for parameter, lookup in dimensions.items()
+            },
+        })
 
 
 class AnalyticsSurvivalAPIView(AnalyticsQueryMixin, APIView):
@@ -557,9 +721,21 @@ class AnalyticsExportAPIView(AnalyticsQueryMixin, APIView):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="analytics_cohort_export.csv"'
         writer = csv.writer(response)
-        writer.writerow(["Registry ID", "Diagnosis", "Stage", "Pathology", "Biomarker", "Treatment", "Response", "Diagnosis date", "Treatment start", "Progression date", "Death date", "Last follow-up"])
+        writer.writerow([
+            "Registry ID", "Diagnosis", "Primary site", "Stage", "Pathological stage", "Pathology", "Grade",
+            "Metastatic site", "Biomarker", "Molecular status", "IHC marker", "Treatment", "Treatment line",
+            "Treatment modality", "Radiotherapy intent", "Radiotherapy site", "Radiotherapy modality",
+            "Surgery modality", "Smoking status", "Comorbidity", "Response", "Progression status",
+            "Survival status", "Diagnosis date", "Treatment start", "Progression date", "Death date", "Last follow-up",
+        ])
         for row in rows:
-            writer.writerow([row["patient"].registry_id, row["diagnosis"], row["stage"], row["pathology"], row["biomarker"], row["treatment"], row["response"], row["diagnosis_date"], row["treatment_start"], row["progression_date"], row["death_date"], row["last_follow_up"]])
+            writer.writerow([
+                row["patient"].registry_id, row["diagnosis"], row["primary_site"], row["stage"], row["pathological_stage"], row["pathology"], row["grade"],
+                row["metastatic_site"], row["biomarker"], row["molecular_status"], row["ihc_marker"], row["treatment"], row["treatment_line"],
+                row["treatment_modality"], row["radiotherapy_intent"], row["radiotherapy_site"], row["radiotherapy_modality"],
+                row["surgery_modality"], row["smoking_status"], row["comorbidity"], row["response"], row["progression_status"],
+                row["survival_status"], row["diagnosis_date"], row["treatment_start"], row["progression_date"], row["death_date"], row["last_follow_up"],
+            ])
         return response
 
 
