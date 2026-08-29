@@ -1,8 +1,9 @@
 import csv
 from collections import Counter
-from datetime import date
+from datetime import date, datetime, time, timedelta
 
 from django.contrib.auth import authenticate, login, logout
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db.models import BooleanField, CharField, Count, Min, OuterRef, Prefetch, Q, Subquery
@@ -23,6 +24,7 @@ from clinical_registry.models import (
     AlcoholHistoryOption,
     AnalyticsAuditEvent,
     BloodGroupOption,
+    CancerMarker,
     ClinicalObservation,
     CovidStatusOption,
     CovidVaccinationDoseOption,
@@ -397,9 +399,17 @@ class AnalyticsQueryMixin:
         params = request.query_params
         start, end = params.get("start_date"), params.get("end_date")
         if start:
-            observations = observations.filter(observed_at__date__gte=start)
+            start_at = timezone.make_aware(
+                datetime.combine(date.fromisoformat(start), time.min),
+                timezone.get_current_timezone(),
+            )
+            observations = observations.filter(observed_at__gte=start_at)
         if end:
-            observations = observations.filter(observed_at__date__lte=end)
+            end_at = timezone.make_aware(
+                datetime.combine(date.fromisoformat(end) + timedelta(days=1), time.min),
+                timezone.get_current_timezone(),
+            )
+            observations = observations.filter(observed_at__lt=end_at)
         for parameter, field in (("center", "center_id"), ("doctor", "doctor_id")):
             if params.get(parameter):
                 observations = observations.filter(**{field: params[parameter]})
@@ -652,6 +662,7 @@ class AnalyticsFacetAPIView(AnalyticsQueryMixin, APIView):
     SUBJECTS = {
         "histopathology": (Histopathology, "detail", {"method": "histology_type", "site": "site"}),
         "molecular": (MolecularPathology, "status", {"method": "method", "gene": "gene"}),
+        "cancer_marker": (CancerMarker, "name", {"unit": "unit"}),
         "treatment": (TreatmentCycle, "current_chemo_protocol", {"line": "line_of_treatment", "modality": "chemotherapy_modalities__detail"}),
         "radiotherapy": (RadiotherapySchedule, "intent", {"site": "sites__value", "modality": "modalities__value"}),
         "surgery": (Surgery, "modality", {"laterality": "lateralities__value"}),
