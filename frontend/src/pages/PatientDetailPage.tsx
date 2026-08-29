@@ -28,7 +28,6 @@ import {
   compactJoin,
   formatDate,
   formatDateTime,
-  formatMeasure,
   formatStage,
   joinValues,
   metricPalette,
@@ -212,7 +211,7 @@ export default function PatientDetailPage() {
   )
   const requestedCompareObservation = Math.max(
     0,
-    Number(searchParams.get('compare') ?? '0') || 0,
+    Number(searchParams.get('compare') ?? (filteredObservations.length > 1 ? '1' : '0')) || 0,
   )
   const activeObservationIndex = Math.min(
     requestedObservation,
@@ -263,20 +262,23 @@ export default function PatientDetailPage() {
       if (date) events.push({ date, category, label, detail, observationIndex, targetId })
     }
 
-    ;(patient?.observations ?? []).forEach((observation, index) => {
+    ;(patient?.observations ?? [])
+      .map((observation, sourceIndex) => ({ observation, sourceIndex }))
+      .sort((left, right) => (left.observation.observed_at ?? '').localeCompare(right.observation.observed_at ?? ''))
+      .forEach(({ observation, sourceIndex }, chronologicalIndex) => {
       const diagnosisDetail = compactJoin([observation.diagnosis_disease_group, observation.diagnosis_primary_site]) ?? ''
-      add(observation.history?.first_diagnosis_date, 'Diagnosis', 'First diagnosis', diagnosisDetail, index, 'diagnosis')
-      add(observation.observed_at, 'Follow-up', `Observation ${index + 1}`, compactJoin([observation.center_name, observation.consulting_doctor_name]) ?? '', index, 'clinical-snapshot')
-      observation.histopathologies.forEach((item) => add(item.observed_on, 'Pathology', 'Histopathology', compactJoin([item.histology_type, item.site]) ?? '', index, 'pathology'))
-      observation.molecular_pathologies.forEach((item) => add(item.observed_on, 'Molecular', 'Molecular test', compactJoin([item.gene, item.exon, item.status]) ?? '', index, 'molecular-pathology'))
+      add(observation.history?.first_diagnosis_date, 'Diagnosis', 'First diagnosis', diagnosisDetail, sourceIndex, 'diagnosis')
+      add(observation.observed_at, 'Follow-up', `Observation ${chronologicalIndex + 1}`, compactJoin([observation.center_name, observation.consulting_doctor_name]) ?? '', sourceIndex, 'clinical-snapshot')
+      observation.histopathologies.forEach((item) => add(item.observed_on, 'Pathology', 'Histopathology', compactJoin([item.histology_type, item.site]) ?? '', sourceIndex, 'pathology'))
+      observation.molecular_pathologies.forEach((item) => add(item.observed_on, 'Molecular', 'Molecular test', compactJoin([item.gene, item.exon, item.status]) ?? '', sourceIndex, 'molecular-pathology'))
       observation.treatment_cycles.forEach((item) => {
-        add(item.chemo_starting_date, 'Treatment', 'Systemic therapy', compactJoin([item.current_chemo_protocol, item.chemo_cycle_no ? `Cycle ${item.chemo_cycle_no}` : null]) ?? '', index, 'treatment')
-        add(item.recist_1_date, 'Response', 'RECIST assessment', item.recist_1_result ?? '', index, 'response-outcomes')
-        add(item.irecist_date, 'Response', 'iRECIST assessment', item.irecist_result ?? '', index, 'response-outcomes')
-        add(item.disease_progression_status_date, 'Response', 'Progression status', item.disease_progression_status ?? '', index, 'response-outcomes')
+        add(item.chemo_starting_date, 'Treatment', 'Systemic therapy', compactJoin([item.current_chemo_protocol, item.chemo_cycle_no ? `Cycle ${item.chemo_cycle_no}` : null]) ?? '', sourceIndex, 'treatment')
+        add(item.recist_1_date, 'Response', 'RECIST assessment', item.recist_1_result ?? '', sourceIndex, 'response-outcomes')
+        add(item.irecist_date, 'Response', 'iRECIST assessment', item.irecist_result ?? '', sourceIndex, 'response-outcomes')
+        add(item.disease_progression_status_date, 'Response', 'Progression status', item.disease_progression_status ?? '', sourceIndex, 'response-outcomes')
       })
-      observation.radiotherapy_schedules.forEach((item) => add(item.start_date, 'Treatment', 'Radiotherapy', item.intent ?? '', index, 'treatment'))
-      observation.surgeries.forEach((item) => add(item.surgery_date, 'Treatment', 'Surgery', item.modality ?? '', index, 'treatment'))
+      observation.radiotherapy_schedules.forEach((item) => add(item.start_date, 'Treatment', 'Radiotherapy', item.intent ?? '', sourceIndex, 'treatment'))
+      observation.surgeries.forEach((item) => add(item.surgery_date, 'Treatment', 'Surgery', item.modality ?? '', sourceIndex, 'treatment'))
     })
 
     const seen = new Set<string>()
@@ -299,6 +301,106 @@ export default function PatientDetailPage() {
     })
     return [...groups.entries()].map(([date, events]) => ({ date, events }))
   }, [clinicalCourse])
+  const journeyDisplay = useMemo(
+    () =>
+      patientJourney.map((group) => {
+        const branches = new Map<string, typeof group.events>()
+        group.events.forEach((event) => {
+          const events = branches.get(event.category) ?? []
+          events.push(event)
+          branches.set(event.category, events)
+        })
+        return {
+          date: group.date,
+          branches: [...branches.entries()].map(([category, events]) => {
+            const latestEvent = events[events.length - 1]
+            const descriptions = [...new Set(events.map((event) => event.detail).filter(Boolean))]
+            return {
+              category,
+              label: events.length === 1 ? latestEvent.label : `${events.length} ${category.toLowerCase()} records`,
+              detail: descriptions.slice(0, 2).join(' | '),
+              event: latestEvent,
+            }
+          }),
+        }
+      }),
+    [patientJourney],
+  )
+  const clinicalBriefSections = useMemo(() => {
+    const observations = patient?.observations ?? []
+    const uniqueJoined = (values: Array<string | null | undefined>) =>
+      [...new Set(values.filter((value): value is string => Boolean(value?.trim())))].join(', ')
+    const cycles = observations.flatMap((observation) => observation.treatment_cycles)
+    const histories = observations.map((observation) => observation.history).filter(Boolean)
+    const firstDiagnosisDate = histories
+      .map((history) => history?.first_diagnosis_date)
+      .filter((date): date is string => Boolean(date))
+      .sort()[0]
+
+    return [
+      {
+        title: 'Patient profile',
+        items: [
+          { label: 'Age', value: patient?.age ? `${patient.age} years` : '' },
+          { label: 'Sex', value: patient?.gender ?? '' },
+          { label: 'BMI', value: uniqueJoined(histories.map((history) => history?.bmi ? String(history.bmi) : '')) },
+        ],
+      },
+      {
+        title: 'Clinical context',
+        items: [
+          { label: 'Covid and vaccination', value: uniqueJoined(histories.flatMap((history) => history?.covid_histories.map((item) => compactJoin([item.status, item.vaccine_name, item.vaccination_dose, item.date ? formatDate(item.date) : null])) ?? [])) },
+          { label: 'TB history', value: uniqueJoined(histories.flatMap((history) => history?.tb_histories.map((item) => compactJoin([item.status, item.treatment, item.date ? formatDate(item.date) : null])) ?? [])) },
+          { label: 'Smoking history', value: uniqueJoined(histories.flatMap((history) => history?.smoking_histories.map((item) => compactJoin([item.status, item.pack_years ? `${item.pack_years} pack-years` : null])) ?? [])) },
+          { label: 'Comorbidities', value: uniqueJoined(observations.flatMap((observation) => observation.comorbidities.map((item) => item.detail))) },
+        ],
+      },
+      {
+        title: 'Diagnosis',
+        items: [
+          { label: 'First diagnosis', value: formatDate(firstDiagnosisDate) },
+          { label: 'Disease group', value: uniqueJoined(observations.map((observation) => observation.diagnosis_disease_group)) },
+          { label: 'Disease subgroup', value: uniqueJoined(observations.map((observation) => observation.diagnosis_subgroup)) },
+          { label: 'Primary site', value: uniqueJoined(observations.map((observation) => observation.diagnosis_primary_site)) },
+          { label: 'Laterality', value: uniqueJoined(observations.map((observation) => observation.diagnosis_laterality)) },
+          { label: 'Grade', value: uniqueJoined(observations.map((observation) => observation.grade)) },
+          { label: 'Metastatic sites', value: uniqueJoined(observations.flatMap((observation) => observation.metastatic_sites.map((item) => item.value))) },
+          { label: 'Histopathology', value: uniqueJoined(observations.flatMap((observation) => observation.histopathologies.map((item) => item.detail || item.histology_type))) },
+          { label: 'Molecular profile', value: uniqueJoined(observations.flatMap((observation) => observation.molecular_pathologies.map((item) => compactJoin([item.gene, item.exon, item.status])))) },
+          { label: 'Cancer markers', value: uniqueJoined(observations.flatMap((observation) => observation.cancer_markers.map((item) => compactJoin([item.name, item.value, item.unit])))) },
+          { label: 'Clinical TNM', value: uniqueJoined(observations.flatMap((observation) => observation.clinical_stagings.map((item) => formatStage(item.t, item.n, item.m))) ) },
+          { label: 'Pathological TNM', value: uniqueJoined(observations.flatMap((observation) => observation.pathological_stagings.map((item) => formatStage(item.t, item.n, item.m))) ) },
+          { label: 'IHC panels', value: uniqueJoined(observations.flatMap((observation) => observation.ihc_panels.flatMap((panel) => panel.details.map((item) => compactJoin([item.marker_type, item.value]))))) },
+        ],
+      },
+      {
+        title: 'Treatment',
+        items: [
+          { label: 'Treatment cycles', value: cycles.length ? String(cycles.length) : '' },
+          { label: 'Chemotherapy protocol', value: uniqueJoined(cycles.map((cycle) => cycle.current_chemo_protocol)) },
+          { label: 'Chemotherapy details', value: uniqueJoined(cycles.map((cycle) => cycle.chemo_detail)) },
+          { label: 'Chemo cycle number', value: uniqueJoined(cycles.map((cycle) => cycle.chemo_cycle_no)) },
+          { label: 'Line of treatment', value: uniqueJoined(cycles.map((cycle) => cycle.line_of_treatment)) },
+          { label: 'Radiotherapy details', value: uniqueJoined(observations.flatMap((observation) => observation.radiotherapy_schedules.map((item) => compactJoin([joinValues(item.sites.map((site) => site.value)), item.intent, item.total_dose ? `${item.total_dose} cGy` : null])))) },
+          { label: 'Surgeries', value: uniqueJoined(observations.flatMap((observation) => observation.surgeries.map((item) => compactJoin([item.modality, joinValues(item.lateralities.map((laterality) => laterality.value))])))) },
+        ],
+      },
+      {
+        title: 'Outcomes',
+        items: [
+          { label: 'Disease progression', value: uniqueJoined(cycles.map((cycle) => cycle.disease_progression_status)) },
+          { label: 'RECIST result', value: uniqueJoined(cycles.map((cycle) => cycle.recist_1_result)) },
+          { label: 'iRECIST result', value: uniqueJoined(cycles.map((cycle) => cycle.irecist_result)) },
+          { label: 'Pathological response', value: uniqueJoined(cycles.map((cycle) => cycle.pathological_response_rate_result)) },
+          { label: 'Survival status', value: uniqueJoined(cycles.map((cycle) => cycle.survival_status)) },
+          { label: 'PFS', value: uniqueJoined(cycles.map((cycle) => cycle.progression_free_survival)) },
+          { label: 'OS', value: uniqueJoined(cycles.map((cycle) => cycle.overall_survival)) },
+        ],
+      },
+    ]
+      .map((section) => ({ ...section, items: section.items.filter((item) => item.value) }))
+      .filter((section) => section.items.length)
+  }, [patient])
   const stagingTrend = useMemo(
     () =>
       filteredObservations.map((observation, index) => ({
@@ -324,14 +426,18 @@ export default function PatientDetailPage() {
       })),
     [filteredObservations],
   )
-  const activeHistory = activeObservation?.history
   const activeClinicalStage = activeObservation?.clinical_stagings[0]
   const activePathologicalStage = activeObservation?.pathological_stagings[0]
   const activePathologicalDetail =
     activeObservation?.pathological_staging_details[0]
   const activeIhcPanel = activeObservation?.ihc_panels[0]
-  const responseCycles =
-    activeObservation?.treatment_cycles.filter((cycle) =>
+  const patientTreatmentCycles =
+    patient?.observations.flatMap((observation) => observation.treatment_cycles) ?? []
+  const patientRadiotherapySchedules =
+    patient?.observations.flatMap((observation) => observation.radiotherapy_schedules) ?? []
+  const patientSurgeries =
+    patient?.observations.flatMap((observation) => observation.surgeries) ?? []
+  const responseCycles = patientTreatmentCycles.filter((cycle) =>
       [
         cycle.disease_progression_status,
         cycle.survival_status,
@@ -339,7 +445,7 @@ export default function PatientDetailPage() {
         cycle.irecist_result,
         cycle.pathological_response_rate_result,
       ].some(Boolean),
-    ) ?? []
+    )
   const comparisonHighlights = [
     {
       label: 'Observation date',
@@ -511,7 +617,6 @@ export default function PatientDetailPage() {
   const sectionLinks = [
     { id: 'clinical-snapshot', label: 'Snapshot' },
     { id: 'demography', label: 'Demography' },
-    { id: 'history', label: 'History' },
     { id: 'diagnosis', label: 'Diagnosis' },
     { id: 'staging', label: 'Staging' },
     { id: 'pathology', label: 'Pathology' },
@@ -564,10 +669,16 @@ export default function PatientDetailPage() {
     } else {
       next.set('observation', String(index))
     }
+    if (filteredObservations.length > 1 && index === compareObservationIndex) {
+      next.set('compare', String(index === 0 ? 1 : 0))
+    }
     setSearchParams(next, { replace: true })
   }
 
   function selectCompareObservation(index: number) {
+    if (index === activeObservationIndex) {
+      return
+    }
     const next = new URLSearchParams(searchParams)
     if (index === 0) {
       next.delete('compare')
@@ -745,35 +856,6 @@ export default function PatientDetailPage() {
         </div>
       </section>
 
-      <ClinicalCard
-        id="history"
-        eyebrow="Clinical context"
-        title="Treatment decision context"
-        icon={<ClipboardList size={19} />}
-        count={activeHistory ? 1 : 0}
-        hasData={Boolean(activeHistory)}
-        defaultOpen
-        emptyMessage="No linked clinical-context record was imported for the selected observation."
-      >
-        {activeHistory ? (
-          <div className="detail-grid">
-            <DataPoint label="Date of first diagnosis" value={formatDate(activeHistory.first_diagnosis_date)} />
-            <DataPoint label="Smoking status" value={activeHistory.smoking_histories[0]?.status} />
-            <DataPoint label="TB history" value={activeHistory.tb_histories[0]?.status} />
-            <DataPoint label="Covid history" value={activeHistory.covid_histories[0]?.status} />
-            <DataPoint label="Marital status" value={activeHistory.marital_status} />
-            <DataPoint label="Alcohol history" value={activeHistory.alcohol_history} />
-            <DataPoint label="Chest RT history" value={activeHistory.radiotherapy_to_chest} />
-            <DataPoint label="Family cancer history" value={activeHistory.family_cancer_history} />
-            <DataPoint label="Known mutation" value={activeHistory.known_mutation} />
-            <DataPoint label="Height" value={formatMeasure(activeHistory.height_cm, 'cm')} />
-            <DataPoint label="Weight" value={formatMeasure(activeHistory.weight_kg, 'kg')} />
-            <DataPoint label="BMI" value={activeHistory.bmi} />
-            <DataPoint label="Dietary habit" value={activeHistory.dietary_habit} />
-          </div>
-        ) : null}
-      </ClinicalCard>
-
       <section className="panel patient-journey-panel" id="patient-journey">
         <div className="panel-heading">
           <div>
@@ -787,14 +869,14 @@ export default function PatientDetailPage() {
             <p className="clinical-card-empty-copy">Select a milestone to open its observation and linked clinical section.</p>
             <div className="journey-scroll" aria-label="Patient journey timeline">
               <div className="journey-fishbone">
-                {patientJourney.map((group, groupIndex) => (
+                {journeyDisplay.map((group, groupIndex) => (
                   <div className="journey-date-group" key={group.date}>
                     <div className="journey-branch journey-branch-top">
-                      {group.events.filter((_, index) => (index + groupIndex) % 2 === 0).map((event, index) => (
-                        <button key={`${event.category}-${event.label}-${index}`} type="button" className={`journey-event journey-event-${event.category.toLowerCase().replace(/[^a-z]/g, '-')}`} onClick={() => focusJourneyEvent(event)}>
-                          <span>{event.category}</span>
-                          <strong>{event.label}</strong>
-                          {event.detail ? <small>{event.detail}</small> : null}
+                      {group.branches.filter((_, index) => (index + groupIndex) % 2 === 0).map((branch, index) => (
+                        <button key={`${branch.category}-${branch.label}-${index}`} type="button" className={`journey-event journey-event-${branch.category.toLowerCase().replace(/[^a-z]/g, '-')}`} onClick={() => focusJourneyEvent(branch.event)}>
+                          <span>{branch.category}</span>
+                          <strong>{branch.label}</strong>
+                          {branch.detail ? <small>{branch.detail}</small> : null}
                         </button>
                       ))}
                     </div>
@@ -803,11 +885,11 @@ export default function PatientDetailPage() {
                       <time>{formatDate(group.date)}</time>
                     </div>
                     <div className="journey-branch journey-branch-bottom">
-                      {group.events.filter((_, index) => (index + groupIndex) % 2 !== 0).map((event, index) => (
-                        <button key={`${event.category}-${event.label}-${index}`} type="button" className={`journey-event journey-event-${event.category.toLowerCase().replace(/[^a-z]/g, '-')}`} onClick={() => focusJourneyEvent(event)}>
-                          <span>{event.category}</span>
-                          <strong>{event.label}</strong>
-                          {event.detail ? <small>{event.detail}</small> : null}
+                      {group.branches.filter((_, index) => (index + groupIndex) % 2 !== 0).map((branch, index) => (
+                        <button key={`${branch.category}-${branch.label}-${index}`} type="button" className={`journey-event journey-event-${branch.category.toLowerCase().replace(/[^a-z]/g, '-')}`} onClick={() => focusJourneyEvent(branch.event)}>
+                          <span>{branch.category}</span>
+                          <strong>{branch.label}</strong>
+                          {branch.detail ? <small>{branch.detail}</small> : null}
                         </button>
                       ))}
                     </div>
@@ -832,6 +914,30 @@ export default function PatientDetailPage() {
           <EmptyState title="No dated journey milestones available" detail="Dated diagnosis, pathology, treatment, response, and follow-up records will appear here as they are documented." />
         )}
       </section>
+
+      {clinicalBriefSections.length ? (
+        <section className="panel clinical-brief-panel" id="clinical-brief">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Clinical Brief</p>
+              <h3>Patient-wide clinical summary</h3>
+            </div>
+            <span className="result-chip">All recorded observations</span>
+          </div>
+          <div className="clinical-brief-grid">
+            {clinicalBriefSections.map((section) => (
+              <article className={`clinical-brief-column clinical-brief-${section.title.toLowerCase().replace(/[^a-z]+/g, '-')}`} key={section.title}>
+                <h4>{section.title}</h4>
+                <div className="detail-grid detail-grid-compact">
+                  {section.items.map((item) => (
+                    <DataPoint key={item.label} label={item.label} value={item.value} />
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="panel detail-toolbar-panel">
         <div className="detail-toolbar">
@@ -955,7 +1061,7 @@ export default function PatientDetailPage() {
             <div className="compare-report">
               <div className="compare-report-head">
                 <div>
-                  <p className="eyebrow">Clinical Brief</p>
+                  <p className="eyebrow">Visit Comparison</p>
                   <h3>Shareable comparison summary</h3>
                 </div>
                 <div className="panel-actions">
@@ -999,7 +1105,7 @@ export default function PatientDetailPage() {
                   onChange={(event) => selectObservation(Number(event.target.value))}
                 >
                   {filteredObservations.map((observation, index) => (
-                    <option key={`primary-${observation.id}`} value={index}>
+                    <option key={`primary-${observation.id}`} value={index} disabled={index === compareObservationIndex}>
                       {`Obs ${index + 1} · ${formatDate(observation.observed_at)} · ${observation.diagnosis_primary_site || 'No site'}`}
                     </option>
                   ))}
@@ -1013,7 +1119,7 @@ export default function PatientDetailPage() {
                   onChange={(event) => selectCompareObservation(Number(event.target.value))}
                 >
                   {filteredObservations.map((observation, index) => (
-                    <option key={`compare-${observation.id}`} value={index}>
+                    <option key={`compare-${observation.id}`} value={index} disabled={index === activeObservationIndex}>
                       {`Obs ${index + 1} · ${formatDate(observation.observed_at)} · ${observation.diagnosis_primary_site || 'No site'}`}
                     </option>
                   ))}
@@ -1583,7 +1689,7 @@ export default function PatientDetailPage() {
           icon={<Activity size={19} />}
           count={responseCycles.length}
           hasData={responseCycles.length > 0}
-          emptyMessage="No disease progression, survival, RECIST, iRECIST, or pathological response assessment is recorded."
+          emptyMessage="No disease progression, survival, RECIST, iRECIST, or pathological response assessment is recorded for this patient."
         >
           <div className="response-card-stack">
             {responseCycles.map((cycle, index) => (
@@ -1786,15 +1892,15 @@ export default function PatientDetailPage() {
           eyebrow="Treatment"
           title="Treatment footprint"
           icon={<HeartPulse size={19} />}
-          count={(activeObservation?.treatment_cycles.length ?? 0) + (activeObservation?.radiotherapy_schedules.length ?? 0) + (activeObservation?.surgeries.length ?? 0)}
-          hasData={Boolean(activeObservation?.treatment_cycles.length || activeObservation?.radiotherapy_schedules.length || activeObservation?.surgeries.length)}
-          emptyMessage="No treatment records are available for this observation."
+          count={patientTreatmentCycles.length + patientRadiotherapySchedules.length + patientSurgeries.length}
+          hasData={Boolean(patientTreatmentCycles.length || patientRadiotherapySchedules.length || patientSurgeries.length)}
+          emptyMessage="No treatment records are available for this patient."
         >
-          {activeObservation ? (
+          {patientTreatmentCycles.length || patientRadiotherapySchedules.length || patientSurgeries.length ? (
             <div className="stack-grid stack-grid-compact">
               <ListPanel
                 title="Treatment cycles"
-                items={activeObservation.treatment_cycles.map((cycle) => {
+                items={patientTreatmentCycles.map((cycle) => {
                   const protocolCycle = cycle.chemotherapy_protocols
                     .map((protocol) => protocol.cycle_no)
                     .find((value) => value !== null && value !== undefined)
@@ -1812,7 +1918,7 @@ export default function PatientDetailPage() {
               />
               <ListPanel
                 title="Radiotherapy schedules"
-                items={activeObservation.radiotherapy_schedules.map((schedule) =>
+                items={patientRadiotherapySchedules.map((schedule) =>
                   compactJoin([
                     joinValues(schedule.sites.map((item) => item.value)),
                     joinValues(schedule.modalities.map((item) => item.value)),
@@ -1823,7 +1929,7 @@ export default function PatientDetailPage() {
               />
               <ListPanel
                 title="Surgeries"
-                items={activeObservation.surgeries.map((surgery) =>
+                items={patientSurgeries.map((surgery) =>
                   compactJoin([
                     surgery.modality,
                     formatDate(surgery.surgery_date),

@@ -928,7 +928,7 @@
   position: relative;
   display: flex;
   min-width: max-content;
-  min-height: 24rem;
+  min-height: 17rem;
   padding: 1rem 1.25rem;
 }
 
@@ -947,7 +947,7 @@
   z-index: 1;
   display: grid;
   grid-template-rows: 1fr auto 1fr;
-  width: 13.5rem;
+  width: 14.5rem;
 }
 
 .journey-branch {
@@ -1021,7 +1021,61 @@
 
 /* Keep the journey as the first clinical snapshot, immediately after the patient hero. */
 .page-grid > .patient-journey-panel { grid-row: 3; }
-.page-grid > #history { grid-row: 4; }
+
+/* Clinical record follows the care workflow rather than import-table order. */
+.clinical-card-grid > #demography { order: 1; }
+.clinical-card-grid > #diagnosis { order: 2; }
+.clinical-card-grid > #staging { order: 3; }
+.clinical-card-grid > #pathology { order: 4; }
+.clinical-card-grid > #molecular-pathology { order: 5; }
+.clinical-card-grid > #treatment { order: 6; }
+.clinical-card-grid > #response-outcomes { order: 7; }
+.clinical-card-grid > #clinical-snapshot { order: 8; }
+
+.page-grid > .clinical-brief-panel { grid-row: 4; }
+
+.clinical-brief-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+}
+
+.clinical-brief-column {
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface-muted);
+  padding: 0.85rem;
+}
+
+.clinical-brief-column h4 {
+  margin: 0 0 0.7rem;
+  color: var(--accent);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.clinical-brief-diagnosis,
+.clinical-brief-treatment,
+.clinical-brief-outcomes {
+  grid-column: 1 / -1;
+}
+
+.clinical-brief-column .detail-grid { align-items: start; }
+
+.clinical-brief-column .data-point strong {
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .clinical-brief-grid { grid-template-columns: 1fr; }
+  .clinical-brief-diagnosis,
+  .clinical-brief-treatment,
+  .clinical-brief-outcomes { grid-column: auto; }
+}
 
 .section-chip {
   display: inline-flex;
@@ -1375,7 +1429,7 @@
 .data-point strong {
   margin: 0;
   color: #102f49;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .back-link {
@@ -1803,6 +1857,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
+  align-items: start;
 }
 
 .clinical-card {
