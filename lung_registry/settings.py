@@ -83,17 +83,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "lung_registry.wsgi.application"
 
+DB_ENGINE = os.environ.get("DB_ENGINE", "django.db.backends.mysql")
+DB_OPTIONS = {"charset": "utf8mb4"} if DB_ENGINE == "django.db.backends.mysql" else {}
+
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.mysql",
+        "ENGINE": DB_ENGINE,
         "NAME": os.environ.get("DB_NAME", "lung_registry"),
         "USER": os.environ.get("DB_USER", "root"),
         "PASSWORD": os.environ.get("DB_PASSWORD", ""),
         "HOST": os.environ.get("DB_HOST", "127.0.0.1"),
         "PORT": int(os.environ.get("DB_PORT", "3306")),
-        "OPTIONS": {
-            "charset": "utf8mb4",
-        },
+        "OPTIONS": DB_OPTIONS,
     }
     ,
     "legacy": {
@@ -114,6 +115,19 @@ DATABASES = {
         "PASSWORD": os.environ.get("RECENT_DB_PASSWORD", os.environ.get("DB_PASSWORD", "")),
         "HOST": os.environ.get("RECENT_DB_HOST", os.environ.get("DB_HOST", "127.0.0.1")),
         "PORT": int(os.environ.get("RECENT_DB_PORT", os.environ.get("DB_PORT", "3306"))),
+        "OPTIONS": {
+            "charset": "utf8mb4",
+        },
+    },
+    # The active canonical MySQL registry used only while moving to PostgreSQL.
+    # The primary ``default`` database remains the PostgreSQL target.
+    "source_mysql": {
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": os.environ.get("SOURCE_MYSQL_DB_NAME", "lung_registry"),
+        "USER": os.environ.get("SOURCE_MYSQL_DB_USER", os.environ.get("LEGACY_DB_USER", "root")),
+        "PASSWORD": os.environ.get("SOURCE_MYSQL_DB_PASSWORD", os.environ.get("LEGACY_DB_PASSWORD", "")),
+        "HOST": os.environ.get("SOURCE_MYSQL_DB_HOST", os.environ.get("LEGACY_DB_HOST", "127.0.0.1")),
+        "PORT": int(os.environ.get("SOURCE_MYSQL_DB_PORT", os.environ.get("LEGACY_DB_PORT", "3306"))),
         "OPTIONS": {
             "charset": "utf8mb4",
         },
