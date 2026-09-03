@@ -14,6 +14,7 @@ export interface AnalyticsFilterOptions {
   stages: string[]
   biomarkers: string[]
   treatments: string[]
+  regimens: string[]
   outcomes: string[]
 }
 

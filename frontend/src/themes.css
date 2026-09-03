@@ -94,6 +94,19 @@ html[data-theme] .eyebrow,
 html[data-theme] .metric-label,
 html[data-theme] .clinical-card-title small { color: var(--accent); }
 
+/* Analytics KPIs are headings and values rather than the reusable metric-card
+   markup, so bind them directly to each theme's high-contrast tokens. */
+html[data-theme] .analytics-kpis span { color: var(--muted); }
+html[data-theme] .analytics-kpis strong { color: var(--accent); }
+html[data-theme='dark'] .analytics-kpis strong {
+  text-shadow: 0 0 16px rgba(87, 247, 216, 0.22);
+}
+html[data-theme] .analytics-definitions p,
+html[data-theme] .analytics-survival-note { color: var(--muted); }
+html[data-theme] .analytics-definitions strong,
+html[data-theme] .analytics-survival-note a { color: var(--text); }
+html[data-theme] .analytics-survival-note a { text-decoration-color: var(--accent); text-underline-offset: 0.16em; }
+
 html[data-theme] .hero-panel,
 html[data-theme] .panel,
 html[data-theme] .metric-card,
@@ -302,7 +315,18 @@ html[data-theme] .clinical-chart-export-button:hover { background: var(--accent-
 .theme-toggle-dark .theme-toggle-thumb { transform: translateX(1.65rem); background: var(--accent-bright); color: #ffffff; }
 
 @media (max-width: 760px) {
-  .theme-toggle { width: 3.8rem; }
+  html[data-theme] .topbar {
+    position: static;
+    backdrop-filter: none;
+  }
+  .theme-toggle {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    z-index: auto;
+    width: 3.8rem;
+    box-shadow: none;
+  }
   html[data-theme] .response-assessment-grid { grid-template-columns: 1fr; }
   html[data-theme] .marker-chart-grid { grid-template-columns: 1fr; }
 }

@@ -9,7 +9,6 @@ type ClinicalChartProps = {
   className?: string
   onEvents?: Record<string, (params: unknown) => void>
   exportTitle?: string
-  exportTitleLayout?: 'bar' | 'donut'
 }
 
 export function ClinicalChart({
@@ -18,7 +17,6 @@ export function ClinicalChart({
   className,
   onEvents,
   exportTitle,
-  exportTitleLayout = 'bar',
 }: ClinicalChartProps) {
   const [isDark, setIsDark] = useState(() => document.documentElement.dataset.theme === 'dark')
   const chartRef = useRef<ReactECharts>(null)
@@ -37,46 +35,53 @@ export function ClinicalChart({
     backgroundColor: exportBackground,
   }), [exportBackground, option])
 
+  function saveImage(dataUrl: string) {
+    const link = document.createElement('a')
+    link.href = dataUrl
+    link.download = `${(exportTitle || 'lung-panel-chart').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`
+    link.click()
+  }
+
   function downloadChart() {
     const chart = chartRef.current?.getEchartsInstance()
     if (!chart) return
 
     // ECharts otherwise includes the current axis-pointer selection in the PNG.
     chart.dispatchAction({ type: 'hideTip' })
-    if (exportTitle) {
-      const titleLayout: EChartsOption = exportTitleLayout === 'donut'
-        ? { series: [{ center: ['50%', '48%'] }] }
-        : { grid: { top: 52 } }
-      chart.setOption({
-        ...titleLayout,
-        graphic: [{
-          id: 'export-chart-title',
-          type: 'text',
-          left: 12,
-          top: 10,
-          style: { text: exportTitle, fill: isDark ? '#e8f5ff' : '#16324a', font: '600 16px sans-serif' },
-        }],
-      })
-    }
     window.requestAnimationFrame(() => {
-      const link = document.createElement('a')
-      link.href = chart.getDataURL({
+      const chartImage = chart.getDataURL({
         type: 'png',
         pixelRatio: 2,
         backgroundColor: exportBackground,
         excludeComponents: ['toolbox'],
       })
-      link.download = `${(exportTitle || 'lung-panel-chart').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`
-      link.click()
-      if (exportTitle) {
-        const restoreLayout: EChartsOption = exportTitleLayout === 'donut'
-          ? { series: option.series }
-          : { grid: option.grid }
-        chart.setOption({
-          ...restoreLayout,
-          graphic: [{ id: 'export-chart-title', $action: 'remove' }],
-        })
+      if (!exportTitle) {
+        saveImage(chartImage)
+        return
       }
+
+      const image = new Image()
+      image.onload = () => {
+        const pixelRatio = image.naturalWidth / chart.getWidth()
+        const titleHeight = Math.round(42 * pixelRatio)
+        const canvas = document.createElement('canvas')
+        canvas.width = image.naturalWidth
+        canvas.height = image.naturalHeight + titleHeight
+        const context = canvas.getContext('2d')
+        if (!context) {
+          saveImage(chartImage)
+          return
+        }
+        context.fillStyle = exportBackground
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        context.fillStyle = isDark ? '#e8f5ff' : '#16324a'
+        context.font = `600 ${Math.round(16 * pixelRatio)}px sans-serif`
+        context.textBaseline = 'middle'
+        context.fillText(exportTitle, Math.round(12 * pixelRatio), Math.round(22 * pixelRatio))
+        context.drawImage(image, 0, titleHeight)
+        saveImage(canvas.toDataURL('image/png'))
+      }
+      image.src = chartImage
     })
   }
 

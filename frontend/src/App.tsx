@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
-import { Moon, Sun } from 'lucide-react'
+import { Menu, Moon, Sun, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   NavLink,
@@ -58,19 +58,32 @@ function AppHeader({
   theme: 'light' | 'dark'
   onToggleTheme: () => void
 }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
   return (
     <header className="topbar">
-      <div>
+      <div className="topbar-brand">
         <p className="eyebrow">Lung Cancer Registry</p>
         <h1>Lung Cancer Intelligence Hub</h1>
       </div>
-      <div className="topbar-actions">
-        <nav className="topnav" aria-label="Primary">
+      <button
+        type="button"
+        className="mobile-menu-toggle"
+        onClick={() => setMobileMenuOpen((open) => !open)}
+        aria-expanded={mobileMenuOpen}
+        aria-controls="mobile-primary-navigation"
+        aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+      >
+        {mobileMenuOpen ? <X size={21} /> : <Menu size={21} />}
+      </button>
+      <div className={`topbar-actions${mobileMenuOpen ? ' is-open' : ''}`}>
+        <nav id="mobile-primary-navigation" className="topnav" aria-label="Primary">
           <NavLink
             to="/patients"
             className={({ isActive }) =>
               isActive ? 'topnav-link topnav-link-active' : 'topnav-link'
             }
+            onClick={() => setMobileMenuOpen(false)}
           >
             Patients
           </NavLink>
@@ -79,6 +92,7 @@ function AppHeader({
             className={({ isActive }) =>
               isActive ? 'topnav-link topnav-link-active' : 'topnav-link'
             }
+            onClick={() => setMobileMenuOpen(false)}
           >
             Analytics
           </NavLink>
@@ -87,6 +101,7 @@ function AppHeader({
             className={({ isActive }) =>
               isActive ? 'topnav-link topnav-link-active' : 'topnav-link'
             }
+            onClick={() => setMobileMenuOpen(false)}
           >
             New Entry
           </NavLink>
@@ -96,12 +111,13 @@ function AppHeader({
               className={({ isActive }) =>
                 isActive ? 'topnav-link topnav-link-active' : 'topnav-link'
               }
+              onClick={() => setMobileMenuOpen(false)}
             >
               Legacy Review
             </NavLink>
           ) : null}
           {role === 'admin' ? (
-            <a className="topnav-link" href="/admin/">
+            <a className="topnav-link" href="/admin/" onClick={() => setMobileMenuOpen(false)}>
               Django Admin
             </a>
           ) : null}
@@ -114,24 +130,27 @@ function AppHeader({
           <button
             type="button"
             className="secondary-button"
-            onClick={onLogout}
+            onClick={() => {
+              setMobileMenuOpen(false)
+              onLogout()
+            }}
             disabled={isLoggingOut}
           >
             {isLoggingOut ? 'Signing out...' : 'Logout'}
           </button>
         </div>
-        <button
-          type="button"
-          className={theme === 'dark' ? 'theme-toggle theme-toggle-dark' : 'theme-toggle'}
-          onClick={onToggleTheme}
-          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-        >
-          <Sun size={14} aria-hidden="true" />
-          <span className="theme-toggle-thumb">{theme === 'dark' ? <Moon size={13} /> : null}</span>
-          <Moon size={14} aria-hidden="true" />
-        </button>
       </div>
+      <button
+        type="button"
+        className={theme === 'dark' ? 'theme-toggle theme-toggle-dark' : 'theme-toggle'}
+        onClick={onToggleTheme}
+        aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+      >
+        <Sun size={14} aria-hidden="true" />
+        <span className="theme-toggle-thumb">{theme === 'dark' ? <Moon size={13} /> : null}</span>
+        <Moon size={14} aria-hidden="true" />
+      </button>
     </header>
   )
 }

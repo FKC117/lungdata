@@ -15,10 +15,56 @@ import { LoadingState } from '../components/registry-ui'
 
 type Filters = Record<string, string>
 type ChartType = 'bar' | 'donut' | 'table'
+type PaletteMode = 'standard' | 'colorful' | 'tropical' | 'aurora'
 type DistributionItem = { label: string; count: number }
 const clinicalPalette = ['#0f766e', '#168aa2', '#3f74ad', '#5e6f91', '#7c6a9f', '#4f8b72', '#a77a45', '#b25b70', '#8b9650', '#4b8891', '#7288a9', '#8b7697']
-const initialFilters: Filters = { start_date: '', end_date: '', center: '', doctor: '', diagnosis: '', stage: '', biomarker: '', treatment: '', outcome: '' }
-const labels: Record<string, string> = { total_patients: 'Total patients', new_diagnoses: 'Recorded diagnoses', active_treatment: 'Active treatment', recorded_response: 'Recorded response', response_rate: 'Response rate', pfs_available: 'PFS available', os_available: 'OS available' }
+const DAYS_PER_AVERAGE_MONTH = 30.4375
+const chartPalettes: Record<PaletteMode, string[]> = {
+  standard: clinicalPalette,
+  colorful: ['#2563eb', '#db2777', '#f97316', '#16a34a', '#7c3aed', '#0891b2', '#eab308', '#dc2626', '#14b8a6', '#9333ea', '#f43f5e', '#65a30d'],
+  tropical: ['#00b8a9', '#24a8f2', '#8b5cf6', '#f54291', '#ff7a45', '#fbc531', '#a3d65c', '#24d4a8', '#2f80ed', '#ff5e7d', '#ef4444', '#c084fc'],
+  aurora: ['#00e5ff', '#00b0ff', '#2979ff', '#651fff', '#aa00ff', '#d500f9', '#ff0080', '#ff1744', '#ff6d00', '#ffd600', '#aeea00', '#00e676'],
+}
+const paletteLabels: Record<PaletteMode, string> = { standard: 'Standard', colorful: 'Colorful', tropical: 'Tropical', aurora: 'Aurora' }
+const initialFilters: Filters = { start_date: '', end_date: '', center: '', doctor: '', diagnosis: '', stage: '', biomarker: '', treatment: '', regimen: '', outcome: '' }
+const labels: Record<string, string> = { total_patients: 'Total patients', observation_count: 'Included observations', new_diagnoses: 'Recorded diagnoses', active_treatment: 'Active treatment', recorded_response: 'Recorded response', response_rate: 'Response rate', pfs_available: 'PFS available', os_available: 'OS available' }
+const formatMedianDays = (value: number | null) => value === null ? '—' : Number.isInteger(value) ? String(value) : value.toFixed(1)
+
+function RegimenFilter({ value, options, onChange }: { value: string; options: string[]; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const matches = useMemo(() => {
+    const query = value.trim().toLocaleLowerCase()
+    return query ? options.filter((option) => option.toLocaleLowerCase().includes(query)) : options
+  }, [options, value])
+
+  return <div className="analytics-filter analytics-regimen-filter">
+    <span>Regimen / protocol</span>
+    <div className="analytics-combobox">
+      <input
+        type="search"
+        value={value}
+        placeholder="Choose or search regimen"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={open}
+        aria-controls="regimen-options"
+        onFocus={() => setOpen(true)}
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') setOpen(false)
+        }}
+        onChange={(event) => {
+          onChange(event.target.value)
+          setOpen(true)
+        }}
+      />
+      {open ? <div id="regimen-options" className="analytics-combobox-options" role="listbox">
+        <button type="button" role="option" aria-selected={!value} onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(''); setOpen(false) }}>All regimens</button>
+        {matches.length ? matches.map((option) => <button key={option} type="button" role="option" aria-selected={value === option} title={option} onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(option); setOpen(false) }}>{option}</button>) : <p>No matching regimen</p>}
+      </div> : null}
+    </div>
+  </div>
+}
 
 function downloadDistributionCsv(title: string, items: DistributionItem[], total: number) {
   const rows = [['Category', 'Patients', 'Share'], ...items.map((item) => [item.label, String(item.count), total ? `${(item.count / total * 100).toFixed(1)}%` : ''])]
@@ -38,6 +84,7 @@ function DistributionChart({
   defaultTopN = 0,
   supportsMissing = true,
   facetFilters,
+  paletteMode,
 }: {
   title: string
   items: DistributionItem[]
@@ -46,6 +93,7 @@ function DistributionChart({
   defaultTopN?: number
   supportsMissing?: boolean
   facetFilters?: ReactNode
+  paletteMode: PaletteMode
 }) {
   const [chartType, setChartType] = useState<ChartType>(defaultChartType)
   const [includeMissing, setIncludeMissing] = useState(false)
@@ -63,9 +111,20 @@ function DistributionChart({
   const total = displayItems.reduce((sum, item) => sum + item.count, 0)
   const labels = displayItems.map((item) => item.label)
   const values = displayItems.map((item) => item.count)
+  const palette = chartPalettes[paletteMode]
+  const usesMulticolorBars = paletteMode !== 'standard'
+  const barData = usesMulticolorBars
+    ? displayItems.map((item, index) => ({ value: item.count, itemStyle: { color: palette[index % palette.length] } }))
+    : values
+  const barItemStyle = usesMulticolorBars
+    ? { borderRadius: [0, 6, 6, 0] }
+    : { color: '#0f766e', borderRadius: [0, 6, 6, 0] }
+  const verticalBarItemStyle = usesMulticolorBars
+    ? { borderRadius: [6, 6, 0, 0] }
+    : { color: '#0f766e', borderRadius: [6, 6, 0, 0] }
   const option: EChartsOption = chartType === 'donut'
     ? {
-      color: clinicalPalette,
+      color: palette,
       tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
       legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 10 } },
       series: [{
@@ -85,14 +144,14 @@ function DistributionChart({
         grid: { left: 118, right: 22, top: 16, bottom: 18 },
         xAxis: { type: 'value', minInterval: 1 },
         yAxis: { type: 'category', data: labels, inverse: true, axisLabel: { fontSize: 10, width: 102, overflow: 'truncate' } },
-        series: [{ type: 'bar', data: values, label: { show: true, position: 'right', fontSize: 10 }, itemStyle: { color: '#0f766e', borderRadius: [0, 6, 6, 0] } }],
+        series: [{ type: 'bar', data: barData, label: { show: true, position: 'right', fontSize: 10 }, itemStyle: barItemStyle }],
       }
       : {
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
         grid: { left: 42, right: 20, top: 18, bottom: 70 },
         xAxis: { type: 'category', data: labels, axisLabel: { rotate: 35, fontSize: 10, interval: 0 } },
         yAxis: { type: 'value', minInterval: 1 },
-        series: [{ type: 'bar', data: values, label: { show: true, position: 'top', fontSize: 10 }, itemStyle: { color: '#0f766e', borderRadius: [6, 6, 0, 0] } }],
+        series: [{ type: 'bar', data: barData, label: { show: true, position: 'top', fontSize: 10 }, itemStyle: verticalBarItemStyle }],
       }
 
   return (
@@ -128,27 +187,46 @@ function DistributionChart({
             <tbody>{displayItems.map((item) => <tr key={item.label}><td>{item.label}</td><td>{item.count}</td><td>{total ? `${(item.count / total * 100).toFixed(1)}%` : '—'}</td></tr>)}</tbody>
           </table>
         </div>
-      ) : <ClinicalChart height={230} option={option} exportTitle={title} exportTitleLayout={chartType === 'donut' ? 'donut' : 'bar'} />}
+      ) : <ClinicalChart height={230} option={option} exportTitle={title} />}
     </article>
   )
 }
 
-function FacetedChart({ title, subject, filters, horizontal = false, defaultChartType = 'bar' }: {
+function FacetedChart({ title, subject, filters, paletteMode, sectionFilters, showFacetFilters = true, horizontal = false, defaultChartType = 'bar' }: {
   title: string
   subject: string
   filters: Filters
+  paletteMode: PaletteMode
+  sectionFilters?: Filters
+  showFacetFilters?: boolean
   horizontal?: boolean
   defaultChartType?: ChartType
 }) {
   const [localFilters, setLocalFilters] = useState<Filters>({})
-  const queryFilters = { ...filters, ...localFilters }
+  const queryFilters = { ...filters, ...(sectionFilters ?? localFilters) }
   const facetQuery = useQuery({ queryKey: ['analytics-facet', subject, queryFilters], queryFn: () => fetchAnalyticsFacet(subject, queryFilters) })
-  const facetFilters = <div className="analytics-facet-filters">{Object.entries(facetQuery.data?.filters ?? {}).map(([key, values]) => <label key={key}>{key.replace('_', ' ')}<select value={localFilters[key] ?? ''} onChange={event => setLocalFilters(current => ({ ...current, [key]: event.target.value }))}><option value="">All</option>{values.map(value => <option key={value} value={value}>{value}</option>)}</select></label>)}</div>
-  return <div className="analytics-faceted-chart">{facetQuery.isLoading ? <LoadingState label="Loading chart" /> : <DistributionChart title={title} items={facetQuery.data?.items ?? []} horizontal={horizontal} defaultChartType={defaultChartType} defaultTopN={horizontal ? 10 : 0} supportsMissing={false} facetFilters={facetFilters} />}</div>
+  const facetFilters = showFacetFilters ? <div className="analytics-facet-filters">{Object.entries(facetQuery.data?.filters ?? {}).map(([key, values]) => <label key={key}>{key.replace('_', ' ')}<select value={localFilters[key] ?? ''} onChange={event => setLocalFilters(current => ({ ...current, [key]: event.target.value }))}><option value="">All</option>{values.map(value => <option key={value} value={value}>{value}</option>)}</select></label>)}</div> : null
+  return <div className="analytics-faceted-chart">{facetQuery.isLoading ? <LoadingState label="Loading chart" /> : <DistributionChart title={title} items={facetQuery.data?.items ?? []} horizontal={horizontal} defaultChartType={defaultChartType} defaultTopN={horizontal ? 10 : 0} supportsMissing={false} facetFilters={facetFilters} paletteMode={paletteMode} />}</div>
+}
+
+function AnalyticsSection({ eyebrow, title, description, filterSubject, filters, children }: {
+  eyebrow: string
+  title: string
+  description: string
+  filterSubject: string
+  filters: Filters
+  paletteMode?: PaletteMode
+  children: (sectionFilters: Filters) => ReactNode
+}) {
+  const [sectionFilters, setSectionFilters] = useState<Filters>({})
+  const filterQuery = useQuery({ queryKey: ['analytics-section-filters', filterSubject, filters], queryFn: () => fetchAnalyticsFacet(filterSubject, filters) })
+  const filterControls = Object.entries(filterQuery.data?.filters ?? {}).map(([key, values]) => <label key={key}>{key.replace('_', ' ')}<select value={sectionFilters[key] ?? ''} onChange={event => setSectionFilters(current => ({ ...current, [key]: event.target.value }))}><option value="">All</option>{values.map(value => <option key={value} value={value}>{value}</option>)}</select></label>)
+  return <section className="analytics-chart-section analytics-domain-section"><div className="analytics-section-heading"><div><p className="eyebrow">{eyebrow}</p><h3>{title}</h3></div><div className="analytics-section-tools"><p>{description}</p>{filterControls.length ? <div className="analytics-section-filters">{filterControls}</div> : null}</div></div><div className="analytics-chart-grid">{children(sectionFilters)}</div></section>
 }
 
 export default function AnalyticsPage() {
   const [filters, setFilters] = useState<Filters>(initialFilters)
+  const [paletteMode, setPaletteMode] = useState<PaletteMode>('colorful')
   const filterQuery = useQuery({ queryKey: ['analytics-filters'], queryFn: () => fetchAnalyticsFilters() })
   const summaryQuery = useQuery({ queryKey: ['analytics-summary', filters], queryFn: () => fetchAnalyticsSummary(filters) })
   const distributionQuery = useQuery({ queryKey: ['analytics-distributions', filters], queryFn: () => fetchAnalyticsDistributions(filters) })
@@ -161,7 +239,7 @@ export default function AnalyticsPage() {
   const select = (key: string, items: Array<{ value: string; label: string }>) => <label className="analytics-filter">{key.replace('_', ' ')}<select value={filters[key]} onChange={e => change(key, e.target.value)}><option value="">All</option>{items.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
 
   return <section className="page-grid">
-    <section className="hero-panel analytics-hero"><div className="hero-copy"><p className="eyebrow">Read-only analytics</p><h2>Clinical outcomes workspace</h2><p className="hero-text">Published clinical records only. Filters define one patient cohort; blank fields remain missing.</p></div><a className="secondary-button" href={buildAnalyticsExportUrl(filters)}><Download size={16} /> Export safe CSV</a></section>
+    <section className="hero-panel analytics-hero"><div className="hero-copy"><p className="eyebrow">Read-only analytics</p><h2>Clinical outcomes workspace</h2><p className="hero-text">Published clinical records only. Filters define one patient cohort; blank fields remain missing.</p></div><div className="analytics-hero-actions"><label className="analytics-palette-control">Chart palette<select value={paletteMode} onChange={event => setPaletteMode(event.target.value as PaletteMode)} aria-label="Chart color palette">{Object.entries(paletteLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><a className="secondary-button" href={buildAnalyticsExportUrl(filters)}><Download size={16} /> Export safe CSV</a></div></section>
     <section className="panel analytics-filters"><div className="panel-heading"><div><p className="eyebrow">Cohort filters</p><h3><Filter size={17} /> Global selection</h3></div><button className="secondary-button" type="button" onClick={() => setFilters(initialFilters)}>Clear filters</button></div><div className="analytics-filter-grid">
       <label className="analytics-filter">From<input type="date" value={filters.start_date} onChange={e => change('start_date', e.target.value)} /></label>
       <label className="analytics-filter">To<input type="date" value={filters.end_date} onChange={e => change('end_date', e.target.value)} /></label>
@@ -171,14 +249,20 @@ export default function AnalyticsPage() {
       {select('stage', (filterOptions?.stages ?? []).map(x => ({ value: x, label: x })))}
       {select('biomarker', (filterOptions?.biomarkers ?? []).map(x => ({ value: x, label: x })))}
       {select('treatment', (filterOptions?.treatments ?? []).map(x => ({ value: x, label: x })))}
+      <RegimenFilter value={filters.regimen} options={filterOptions?.regimens ?? []} onChange={(value) => change('regimen', value)} />
       {select('outcome', [{ value: 'progressed', label: 'Progressed' }, { value: 'deceased', label: 'Deceased' }])}
     </div></section>
     {summaryQuery.isLoading ? <LoadingState label="Calculating cohort metrics" /> : <section className="analytics-kpis">{Object.entries(kpis).map(([key, value]) => <article className="metric-card" key={key}><span>{labels[key]}</span><strong>{key === 'response_rate' && value !== null ? `${value}%` : value ?? '—'}</strong></article>)}</section>}
     {distributionQuery.isLoading ? <LoadingState label="Loading distributions" /> : <>
-      <section className="analytics-chart-section"><h3>Cohort overview</h3><div className="analytics-chart-grid"><DistributionChart title="Stage distribution" items={distributionQuery.data?.stage ?? []} /><DistributionChart title="Tumor grade" items={distributionQuery.data?.grade ?? []} defaultChartType="donut" /><DistributionChart title="Recorded responses" items={distributionQuery.data?.response ?? []} defaultChartType="donut" /></div></section>
-      <section className="analytics-chart-section"><h3>Clinical drill-downs</h3><div className="analytics-chart-grid"><FacetedChart title="Histopathology diagnosis" subject="histopathology" filters={filters} horizontal /><FacetedChart title="Molecular test result" subject="molecular" filters={filters} defaultChartType="donut" /><FacetedChart title="Cancer marker recordings" subject="cancer_marker" filters={filters} horizontal /><FacetedChart title="Treatment protocol" subject="treatment" filters={filters} horizontal /><FacetedChart title="Radiotherapy intent" subject="radiotherapy" filters={filters} defaultChartType="donut" /><FacetedChart title="Surgery modality" subject="surgery" filters={filters} horizontal /></div></section>
+      <section className="analytics-chart-section analytics-domain-section"><div className="analytics-section-heading"><div><p className="eyebrow">Cohort overview</p><h3>Patient-level clinical summary</h3></div><div className="analytics-section-tools"><p>Latest available value per included patient.</p></div></div><div className="analytics-chart-grid"><DistributionChart title="Stage distribution" items={distributionQuery.data?.stage ?? []} paletteMode={paletteMode} /><DistributionChart title="Tumor grade" items={distributionQuery.data?.grade ?? []} defaultChartType="donut" paletteMode={paletteMode} /><DistributionChart title="Recorded responses" items={distributionQuery.data?.response ?? []} defaultChartType="donut" paletteMode={paletteMode} /></div></section>
+      <AnalyticsSection eyebrow="Histopathology" title="Tumor pathology" description="Shared method and site filters apply to every pathology chart." filterSubject="histopathology" filters={filters} paletteMode={paletteMode}>{sectionFilters => <><FacetedChart title="Histopathology method" subject="histopathology_method" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} /><FacetedChart title="Histopathology site" subject="histopathology_site" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} /><FacetedChart title="Histopathology diagnosis" subject="histopathology" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} horizontal /></>}</AnalyticsSection>
+      <AnalyticsSection eyebrow="Molecular pathology" title="Method → gene → result" description="Shared method and gene filters apply to every molecular chart." filterSubject="molecular" filters={filters} paletteMode={paletteMode}>{sectionFilters => <><FacetedChart title="Molecular test method" subject="molecular_method" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} /><FacetedChart title="Molecular genes" subject="molecular_gene" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} horizontal /><FacetedChart title="Molecular test result" subject="molecular" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} defaultChartType="donut" /></>}</AnalyticsSection>
+      <AnalyticsSection eyebrow="Cancer markers" title="Recorded marker tests" description="The unit filter applies to every cancer-marker chart." filterSubject="cancer_marker" filters={filters} paletteMode={paletteMode}>{sectionFilters => <><FacetedChart title="Cancer marker recordings" subject="cancer_marker" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} horizontal /><FacetedChart title="Cancer marker unit" subject="cancer_marker_unit" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} /></>}</AnalyticsSection>
+      <AnalyticsSection eyebrow="Systemic treatment" title="Modality, line, and recorded cycles" description="Shared line and modality filters apply to every treatment chart. Raw protocol text remains an audit view." filterSubject="treatment" filters={filters} paletteMode={paletteMode}>{sectionFilters => <><FacetedChart title="Treatment modality" subject="treatment_modality" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} /><FacetedChart title="Line of treatment" subject="treatment_line" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} /><FacetedChart title="Raw treatment-cycle entries" subject="treatment" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} horizontal /></>}</AnalyticsSection>
+      <AnalyticsSection eyebrow="Radiotherapy" title="Intent, site, and modality" description="Shared site and modality filters apply to every radiotherapy chart." filterSubject="radiotherapy" filters={filters} paletteMode={paletteMode}>{sectionFilters => <><FacetedChart title="Radiotherapy intent" subject="radiotherapy" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} defaultChartType="donut" /><FacetedChart title="Radiotherapy site" subject="radiotherapy_site" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} /><FacetedChart title="Radiotherapy modality" subject="radiotherapy_modality" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} /></>}</AnalyticsSection>
+      <AnalyticsSection eyebrow="Surgery" title="Modality and laterality" description="The laterality filter applies to both surgery charts." filterSubject="surgery" filters={filters} paletteMode={paletteMode}>{sectionFilters => <><FacetedChart title="Surgery modality" subject="surgery" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} horizontal /><FacetedChart title="Surgery laterality" subject="surgery_laterality" filters={filters} sectionFilters={sectionFilters} showFacetFilters={false} paletteMode={paletteMode} /></>}</AnalyticsSection>
     </>}
-    <section className="insight-grid"><article className="panel"><div className="panel-heading"><div><p className="eyebrow">Survival summary</p><h3><BarChart3 size={17} /> PFS and OS</h3></div></div>{survivalQuery.isLoading ? <LoadingState label="Calculating survival summary" /> : <div className="analytics-table-wrap"><table className="registry-table"><thead><tr><th>Metric</th><th>Available</th><th>Median days</th></tr></thead><tbody>{survival.map(item => <tr key={item.metric}><td>{item.metric.toUpperCase()}</td><td>{item.available}</td><td>{item.median_days ?? '—'}</td></tr>)}</tbody></table></div>}</article><article className="panel"><div className="panel-heading"><div><p className="eyebrow">Data quality</p><h3>Completeness</h3></div></div><div className="analytics-completeness">{completeness.map(item => <div key={item.label}><span>{item.label}</span><strong>{item.count}/{item.total}</strong><div><i style={{ width: `${item.total ? item.count / item.total * 100 : 0}%` }} /></div></div>)}</div></article></section>
+    <section className="insight-grid"><article className="panel"><div className="panel-heading"><div><p className="eyebrow">Survival summary</p><h3><BarChart3 size={17} /> PFS and OS</h3></div></div>{survivalQuery.isLoading ? <LoadingState label="Calculating survival summary" /> : <><div className="analytics-table-wrap"><table className="registry-table"><thead><tr><th>Metric</th><th>Available</th><th>Median days</th><th>Median months</th></tr></thead><tbody>{survival.map(item => <tr key={item.metric}><td>{item.metric.toUpperCase()}</td><td>{item.available}</td><td>{formatMedianDays(item.median_days)}</td><td>{item.median_days === null ? '—' : (item.median_days / DAYS_PER_AVERAGE_MONTH).toFixed(1)}</td></tr>)}</tbody></table></div><p className="analytics-survival-note">Descriptive calculation only; not a Kaplan–Meier estimate. Months = median days ÷ 30.4375 (365.25 ÷ 12). <a href="https://nctn-data-archive.nci.nih.gov/system/files/dataset/NCT00310180-D1/NCT00310180-D1-Data-Dictionary.pdf" target="_blank" rel="noreferrer">Reference: NCI trial data dictionary</a>.</p></>}</article><article className="panel"><div className="panel-heading"><div><p className="eyebrow">Data quality</p><h3>Completeness</h3></div></div><div className="analytics-completeness">{completeness.map(item => <div key={item.label}><span>{item.label}</span><strong>{item.count}/{item.total}</strong><div><i style={{ width: `${item.total ? item.count / item.total * 100 : 0}%` }} /></div></div>)}</div></article></section>
     <section className="panel analytics-definitions"><p className="eyebrow"><ShieldCheck size={16} /> Calculation definitions</p>{Object.entries(summaryQuery.data?.definitions ?? {}).map(([key, value]) => <p key={key}><strong>{key.replace('_', ' ')}:</strong> {value}</p>)}</section>
   </section>
 }

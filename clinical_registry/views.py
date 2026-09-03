@@ -1,6 +1,7 @@
 import csv
 from collections import Counter
 from datetime import date, datetime, time, timedelta
+from statistics import median
 
 from django.contrib.auth import authenticate, login, logout
 from django.utils import timezone
@@ -49,6 +50,7 @@ from clinical_registry.models import (
     SocioEconomicStatusOption,
     TuberculosisStatusOption,
     ClinicalStaging,
+    ChemotherapyModality,
     Histopathology,
     MolecularPathology,
     RadiotherapySchedule,
@@ -391,7 +393,7 @@ class AnalyticsQueryMixin:
     a negative result.
     """
 
-    def get_cohort(self, request):
+    def matching_observations(self, request):
         observations = scope_observations_for_user(
             ClinicalObservation.objects.filter(deleted_at__isnull=True, is_draft=False),
             request.user,
@@ -420,23 +422,44 @@ class AnalyticsQueryMixin:
         if params.get("biomarker"):
             observations = observations.filter(molecular_pathologies__gene__iexact=params["biomarker"])
         if params.get("treatment"):
-            observations = observations.filter(treatment_cycles__current_chemo_protocol__icontains=params["treatment"])
+            observations = observations.filter(
+                treatment_cycles__chemotherapy_modalities__detail__iexact=params["treatment"]
+            )
+        if params.get("regimen"):
+            observations = observations.filter(
+                treatment_cycles__current_chemo_protocol__icontains=params["regimen"]
+            )
         if params.get("outcome") == "progressed":
             observations = observations.filter(treatment_cycles__disease_progression_status__icontains="progress")
         elif params.get("outcome") == "deceased":
             observations = observations.filter(treatment_cycles__survival_status__icontains="dead")
-        patient_ids = observations.values_list("patient_id", flat=True).distinct()
+        return observations.distinct()
+
+    def get_cohort(self, request):
+        patient_ids = self.matching_observations(request).values_list("patient_id", flat=True).distinct()
         return Patient.objects.filter(id__in=patient_ids, deleted_at__isnull=True).distinct()
+
+    def analysis_observations(self, request):
+        matching = self.matching_observations(request)
+        patient_ids = matching.values_list("patient_id", flat=True).distinct()
+        return scope_observations_for_user(
+            ClinicalObservation.objects.filter(
+                patient_id__in=patient_ids,
+                deleted_at__isnull=True,
+                is_draft=False,
+            ),
+            request.user,
+        )
 
     @staticmethod
     def latest_nonblank(items, attribute):
         values = [getattr(item, attribute) for item in items if getattr(item, attribute, None)]
         return values[-1] if values else ""
 
-    def patient_rows(self, cohort):
-        observations = ClinicalObservation.objects.filter(
+    def patient_rows(self, cohort, observations=None):
+        observations = (observations if observations is not None else ClinicalObservation.objects.filter(
             patient__in=cohort, deleted_at__isnull=True, is_draft=False
-        ).select_related("center", "doctor").prefetch_related(
+        )).select_related("center", "doctor").prefetch_related(
             "history__smoking_histories",
             "history__tb_histories",
             "history__covid_histories",
@@ -548,10 +571,14 @@ class AnalyticsQueryMixin:
     def definitions(self):
         return {
             "cohort": "One patient with at least one published clinical observation matching the filters.",
+            "analysis_scope": "Analytics uses the patient journey: all published observations for patients who ever match the cohort filters.",
+            "observation_count": "Number of published clinical observations included in the patient journey for the selected cohort.",
             "date_range": "Filters on published clinical-observation date, inclusive.",
             "response_rate": "Patients with a recorded RECIST 1.1 or iRECIST result divided by patients with a treatment record.",
-            "pfs": "Days from first chemotherapy start to recorded progression or death; censored at last published observation when neither is recorded.",
-            "os": "Days from first diagnosis to recorded death; censored at last published observation when death is not recorded.",
+            "pfs": "Descriptive PFS duration: days from first chemotherapy start to recorded progression or death, or last published observation when neither is recorded. This is not a Kaplan–Meier estimate.",
+            "os": "Descriptive OS duration: days from first diagnosis to recorded death, or last published observation when death is not recorded. This is not a Kaplan–Meier estimate.",
+            "survival_summary": "Median duration is the ordinary median of available patient-level durations; it does not model censoring or estimate a Kaplan–Meier survival curve.",
+            "median_months": "Median months are derived from median days ÷ 30.4375 (365.25 ÷ 12), rounded for display.",
             "missing": "Blank, unknown, and unavailable fields remain Not recorded and are excluded from outcome denominators.",
         }
 
@@ -576,7 +603,20 @@ class AnalyticsFiltersAPIView(AnalyticsQueryMixin, APIView):
             "diagnoses": list(observations.exclude(diagnosis_disease_group="").values_list("diagnosis_disease_group", flat=True).distinct().order_by("diagnosis_disease_group")),
             "stages": list(ClinicalStaging.objects.filter(observation__in=observations).exclude(result="").values_list("result", flat=True).distinct().order_by("result")),
             "biomarkers": list(MolecularPathology.objects.filter(observation__in=observations).exclude(gene="").values_list("gene", flat=True).distinct().order_by("gene")),
-            "treatments": list(TreatmentCycle.objects.filter(observation__in=observations).exclude(current_chemo_protocol="").values_list("current_chemo_protocol", flat=True).distinct().order_by("current_chemo_protocol")),
+            "treatments": list(
+                ChemotherapyModality.objects.filter(treatment_cycle__observation__in=observations)
+                .exclude(detail="")
+                .values_list("detail", flat=True)
+                .distinct()
+                .order_by("detail")
+            ),
+            "regimens": list(
+                TreatmentCycle.objects.filter(observation__in=observations)
+                .exclude(current_chemo_protocol="")
+                .values_list("current_chemo_protocol", flat=True)
+                .distinct()
+                .order_by("current_chemo_protocol")
+            ),
             "outcomes": ["progressed", "deceased"],
         })
 
@@ -586,11 +626,14 @@ class AnalyticsSummaryAPIView(AnalyticsQueryMixin, APIView):
 
     def get(self, request):
         self.audit(request, "analytics_summary")
-        rows = self.patient_rows(self.get_cohort(request))
+        cohort = self.get_cohort(request)
+        observations = self.analysis_observations(request)
+        rows = self.patient_rows(cohort, observations)
         treated = [row for row in rows if row["treatment"]]
         responded = [row for row in treated if row["response"]]
         return Response({"kpis": {
             "total_patients": len(rows),
+            "observation_count": observations.count(),
             "new_diagnoses": sum(bool(row["diagnosis_date"]) for row in rows),
             "active_treatment": sum(row["active_treatment"] for row in rows),
             "recorded_response": len(responded),
@@ -605,7 +648,7 @@ class AnalyticsDistributionAPIView(AnalyticsQueryMixin, APIView):
 
     def get(self, request):
         self.audit(request, "analytics_distributions")
-        rows = self.patient_rows(self.get_cohort(request))
+        rows = self.patient_rows(self.get_cohort(request), self.analysis_observations(request))
         completeness = [
             {"label": label, "count": sum(bool(row[key]) for row in rows), "total": len(rows)}
             for label, key in [("Diagnosis", "diagnosis"), ("Stage", "stage"), ("Pathology", "pathology"), ("Biomarker", "biomarker"), ("Treatment", "treatment"), ("Response", "response"), ("Diagnosis date", "diagnosis_date")]
@@ -661,11 +704,21 @@ class AnalyticsFacetAPIView(AnalyticsQueryMixin, APIView):
 
     SUBJECTS = {
         "histopathology": (Histopathology, "detail", {"method": "histology_type", "site": "site"}),
+        "histopathology_method": (Histopathology, "histology_type", {"method": "histology_type", "site": "site"}),
+        "histopathology_site": (Histopathology, "site", {"method": "histology_type", "site": "site"}),
         "molecular": (MolecularPathology, "status", {"method": "method", "gene": "gene"}),
+        "molecular_gene": (MolecularPathology, "gene", {"method": "method", "gene": "gene"}),
+        "molecular_method": (MolecularPathology, "method", {"method": "method", "gene": "gene"}),
         "cancer_marker": (CancerMarker, "name", {"unit": "unit"}),
+        "cancer_marker_unit": (CancerMarker, "unit", {"unit": "unit"}),
         "treatment": (TreatmentCycle, "current_chemo_protocol", {"line": "line_of_treatment", "modality": "chemotherapy_modalities__detail"}),
+        "treatment_line": (TreatmentCycle, "line_of_treatment", {"line": "line_of_treatment", "modality": "chemotherapy_modalities__detail"}),
+        "treatment_modality": (TreatmentCycle, "chemotherapy_modalities__detail", {"line": "line_of_treatment", "modality": "chemotherapy_modalities__detail"}),
         "radiotherapy": (RadiotherapySchedule, "intent", {"site": "sites__value", "modality": "modalities__value"}),
+        "radiotherapy_site": (RadiotherapySchedule, "sites__value", {"site": "sites__value", "modality": "modalities__value"}),
+        "radiotherapy_modality": (RadiotherapySchedule, "modalities__value", {"site": "sites__value", "modality": "modalities__value"}),
         "surgery": (Surgery, "modality", {"laterality": "lateralities__value"}),
+        "surgery_laterality": (Surgery, "lateralities__value", {"laterality": "lateralities__value"}),
     }
 
     def get(self, request):
@@ -676,9 +729,7 @@ class AnalyticsFacetAPIView(AnalyticsQueryMixin, APIView):
         model, measure, dimensions = definition
         self.audit(request, f"analytics_facet_{subject}")
         base = model.objects.filter(
-            observation__patient__in=self.get_cohort(request),
-            observation__deleted_at__isnull=True,
-            observation__is_draft=False,
+            observation__in=self.analysis_observations(request),
         )
         queryset = base
         for parameter, lookup in dimensions.items():
@@ -710,7 +761,7 @@ class AnalyticsSurvivalAPIView(AnalyticsQueryMixin, APIView):
 
     def get(self, request):
         self.audit(request, "analytics_survival")
-        rows = self.patient_rows(self.get_cohort(request))
+        rows = self.patient_rows(self.get_cohort(request), self.analysis_observations(request))
         result = []
         for metric, start_key, event_key in (("pfs", "treatment_start", "progression_date"), ("os", "diagnosis_date", "death_date")):
             values = []
@@ -719,7 +770,7 @@ class AnalyticsSurvivalAPIView(AnalyticsQueryMixin, APIView):
                 end = row[event_key] or row["last_follow_up"]
                 if start and end and end >= start:
                     values.append((end - start).days)
-            result.append({"metric": metric, "available": len(values), "median_days": sorted(values)[len(values) // 2] if values else None, "values": values})
+            result.append({"metric": metric, "available": len(values), "median_days": median(values) if values else None, "values": values})
         return Response({"survival": result, "definitions": self.definitions()})
 
 
@@ -728,7 +779,7 @@ class AnalyticsExportAPIView(AnalyticsQueryMixin, APIView):
 
     def get(self, request):
         self.audit(request, "analytics_export")
-        rows = self.patient_rows(self.get_cohort(request))
+        rows = self.patient_rows(self.get_cohort(request), self.analysis_observations(request))
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="analytics_cohort_export.csv"'
         writer = csv.writer(response)
