@@ -89,6 +89,13 @@ export interface AnalyticsMolecularChronology {
   items: Array<{ label: string; count: number }>
 }
 
+export interface AnalyticsMolecularResultBreakdown {
+  count_mode: string
+  unit: string
+  statuses: string[]
+  rows: Array<{ method: string; gene: string; status: string; count: number }>
+}
+
 export interface AnalyticsSurvival {
   survival: Array<{ metric: string; available: number; median_days: number | null; values: number[] }>
   definitions: Record<string, string>
@@ -743,6 +750,12 @@ export function fetchAnalyticsMolecularChronology(filters: Record<string, string
   const params = new URLSearchParams(analyticsQuery(filters))
   params.set('count_mode', countMode)
   return request<AnalyticsMolecularChronology>(`/api/analytics/molecular-chronology/?${params.toString()}`)
+}
+
+export function fetchAnalyticsMolecularResultBreakdown(filters: Record<string, string>, countMode = 'entries') {
+  const params = new URLSearchParams(analyticsQuery(filters))
+  params.set('count_mode', countMode)
+  return request<AnalyticsMolecularResultBreakdown>(`/api/analytics/molecular-result-breakdown/?${params.toString()}`)
 }
 
 export function fetchAnalyticsSurvival(filters: Record<string, string>) {

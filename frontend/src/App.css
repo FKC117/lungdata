@@ -174,6 +174,11 @@
 .molecular-summary-card span, .molecular-summary-note { color: var(--muted, #5c7183); font-size: .76rem; line-height: 1.35; }
 .molecular-summary-card strong { color: var(--text, #173b5f); font-size: 1.35rem; }
 .molecular-summary-note { margin: 0; }
+.molecular-cross-tab { grid-column: 1 / -1; padding: 1rem; }
+.molecular-cross-tab-note { max-width: 42rem; margin: .3rem 0 0; color: var(--muted, #5c7183); font-size: .78rem; line-height: 1.35; }
+.molecular-cross-tab-toggle { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: .35rem; }
+.molecular-cross-tab-toggle span { color: var(--muted, #5c7183); font-size: .76rem; }
+.molecular-cross-tab .registry-table th:not(:first-child), .molecular-cross-tab .registry-table td:not(:first-child) { text-align: right; white-space: nowrap; }
 .analytics-facet-heading { display: flex; justify-content: flex-end; gap: .5rem; align-items: center; min-height: 1.9rem; }
 .analytics-facet-heading > span { color: #5c7183; font-size: .72rem; white-space: nowrap; }
 .analytics-facet-filters { display: flex; justify-content: flex-end; gap: .4rem; flex-wrap: wrap; }

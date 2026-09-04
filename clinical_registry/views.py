@@ -820,6 +820,36 @@ class AnalyticsMolecularChronologyAPIView(AnalyticsQueryMixin, APIView):
         })
 
 
+class AnalyticsMolecularResultBreakdownAPIView(AnalyticsQueryMixin, APIView):
+    """Method × gene × result cross-tab; the directly interpretable molecular view."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        self.audit(request, "analytics_molecular_result_breakdown")
+        count_mode = request.query_params.get("count_mode", "entries")
+        if count_mode not in {"patients", "events", "entries"}:
+            return Response({"detail": "Unknown count mode."}, status=status.HTTP_400_BAD_REQUEST)
+        records = MolecularPathology.objects.filter(observation__in=self.analysis_observations(request))
+        for parameter in ("method", "gene"):
+            value = (request.query_params.get(parameter) or "").strip()
+            if value:
+                records = records.filter(**{parameter: value})
+        count_field = {"patients": "observation__patient_id", "events": "observation_id", "entries": "id"}[count_mode]
+        rows = list(
+            records.exclude(method="").exclude(gene="").exclude(status="")
+            .values("method", "gene", "status")
+            .annotate(count=Count(count_field, distinct=True))
+            .order_by("method", "gene", "status")
+        )
+        return Response({
+            "count_mode": count_mode,
+            "unit": {"patients": "patients", "events": "test events", "entries": "result entries"}[count_mode],
+            "statuses": sorted({row["status"] for row in rows}),
+            "rows": rows,
+        })
+
+
 class AnalyticsPatientMatchesAPIView(AnalyticsQueryMixin, APIView):
     """Patient-level traceability for the active analytics cohort or domain."""
 
