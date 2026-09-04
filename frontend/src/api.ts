@@ -70,13 +70,80 @@ export interface AnalyticsFacet {
   subject: string
   measure: string
   unit: string
+  count_mode: string
   items: Array<{ label: string; count: number }>
   filters: Record<string, string[]>
+}
+
+export interface AnalyticsMolecularSummary {
+  patients_tested: number
+  test_events: number
+  result_entries: number
+  methods_recorded: number
+  definition: string
+}
+
+export interface AnalyticsMolecularChronology {
+  count_mode: string
+  unit: string
+  items: Array<{ label: string; count: number }>
 }
 
 export interface AnalyticsSurvival {
   survival: Array<{ metric: string; available: number; median_days: number | null; values: number[] }>
   definitions: Record<string, string>
+}
+
+export interface AnalyticsPatientMatches {
+  subject: string
+  scope: string
+  count: number
+  items: Array<{
+    registry_id: string | null
+    name: string
+    registration_no: string
+    phone: string
+    email: string
+    age: number | null
+    gender: string
+    district: string
+    matching_records: number
+    latest_observation: string | null
+    molecular_methods: string
+    diagnosis: string
+    primary_site: string
+    diagnosis_subgroup: string
+    diagnosis_laterality: string
+    stage: string
+    pathological_stage: string
+    pathology: string
+    grade: string
+    metastatic_site: string
+    biomarker: string
+    molecular_status: string
+    molecular_exon: string
+    molecular_method: string
+    molecular_specimen: string
+    cancer_marker: string
+    treatment: string
+    treatment_line: string
+    treatment_modality: string
+    response: string
+    progression_status: string
+    survival_status: string
+    radiotherapy_intent: string
+    radiotherapy_site: string
+    radiotherapy_modality: string
+    surgery_modality: string
+    surgery_laterality: string
+    smoking_status: string
+    comorbidity: string
+    diagnosis_date: string | null
+    treatment_start: string | null
+    progression_date: string | null
+    death_date: string | null
+    last_follow_up: string | null
+  }>
 }
 
 export interface PatientDemographicsLookup {
@@ -661,14 +728,31 @@ export function fetchAnalyticsDistributions(filters: Record<string, string>) {
   return request<AnalyticsDistributions>(`/api/analytics/distributions/?${analyticsQuery(filters)}`)
 }
 
-export function fetchAnalyticsFacet(subject: string, filters: Record<string, string>) {
+export function fetchAnalyticsFacet(subject: string, filters: Record<string, string>, countMode = 'records') {
   const params = new URLSearchParams(analyticsQuery(filters))
   params.set('subject', subject)
+  params.set('count_mode', countMode)
   return request<AnalyticsFacet>(`/api/analytics/facet/?${params.toString()}`)
+}
+
+export function fetchAnalyticsMolecularSummary(filters: Record<string, string>) {
+  return request<AnalyticsMolecularSummary>(`/api/analytics/molecular-summary/?${analyticsQuery(filters)}`)
+}
+
+export function fetchAnalyticsMolecularChronology(filters: Record<string, string>, countMode = 'events') {
+  const params = new URLSearchParams(analyticsQuery(filters))
+  params.set('count_mode', countMode)
+  return request<AnalyticsMolecularChronology>(`/api/analytics/molecular-chronology/?${params.toString()}`)
 }
 
 export function fetchAnalyticsSurvival(filters: Record<string, string>) {
   return request<AnalyticsSurvival>(`/api/analytics/survival/?${analyticsQuery(filters)}`)
+}
+
+export function fetchAnalyticsPatientMatches(subject: string, filters: Record<string, string>) {
+  const params = new URLSearchParams(analyticsQuery(filters))
+  if (subject) params.set('subject', subject)
+  return request<AnalyticsPatientMatches>(`/api/analytics/patients/?${params.toString()}`)
 }
 
 export function buildAnalyticsExportUrl(filters: Record<string, string>) {

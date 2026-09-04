@@ -158,10 +158,22 @@
 .analytics-section-heading h3 { margin: 0; color: var(--text, #173b5f); font-size: 1.1rem; }
 .analytics-section-tools { display: flex; align-items: end; justify-content: flex-end; gap: .7rem; flex-wrap: wrap; }
 .analytics-section-tools > p { max-width: 30rem; margin: 0; color: var(--muted, #5c7183); font-size: .78rem; line-height: 1.4; text-align: right; }
+.analytics-review-button { min-height: 1.9rem; border: 1px solid rgba(20, 128, 116, .42); border-radius: 8px; padding: .28rem .55rem; background: rgba(20, 128, 116, .09); color: #0f766e; cursor: pointer; font: inherit; font-size: .73rem; font-weight: 800; white-space: nowrap; }
+.analytics-review-button:hover { background: rgba(20, 128, 116, .17); }
+.analytics-patient-drilldown { padding: 1.15rem; }
+.analytics-drilldown-scope { max-width: 46rem; margin: .25rem 0 0; color: var(--muted, #5c7183); font-size: .8rem; line-height: 1.35; }
+.analytics-drilldown-count { margin: .65rem 0; color: var(--muted, #5c7183); font-size: .82rem; font-weight: 700; }
+.analytics-drilldown-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
 .analytics-section-filters { display: flex; justify-content: flex-end; gap: .4rem; flex-wrap: wrap; }
 .analytics-section-filters label { display: grid; gap: .18rem; color: #4f6578; font-size: .7rem; font-weight: 700; text-transform: capitalize; }
 .analytics-section-filters select { min-height: 1.85rem; max-width: 8.25rem; border: 1px solid rgba(15, 76, 129, .18); border-radius: 7px; padding: .18rem .3rem; background: #fff; color: #173b5f; }
 .analytics-faceted-chart { display: grid; gap: .45rem; min-width: 0; }
+.molecular-summary-wrap { grid-column: 1 / -1; display: grid; gap: .5rem; padding: .85rem; border: 1px solid rgba(20, 128, 116, .25); border-radius: 15px; background: rgba(20, 128, 116, .06); }
+.molecular-summary-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; }
+.molecular-summary-card { display: grid; gap: .2rem; min-width: 0; padding: .65rem .75rem; border-radius: 11px; background: var(--surface, #fff); }
+.molecular-summary-card span, .molecular-summary-note { color: var(--muted, #5c7183); font-size: .76rem; line-height: 1.35; }
+.molecular-summary-card strong { color: var(--text, #173b5f); font-size: 1.35rem; }
+.molecular-summary-note { margin: 0; }
 .analytics-facet-heading { display: flex; justify-content: flex-end; gap: .5rem; align-items: center; min-height: 1.9rem; }
 .analytics-facet-heading > span { color: #5c7183; font-size: .72rem; white-space: nowrap; }
 .analytics-facet-filters { display: flex; justify-content: flex-end; gap: .4rem; flex-wrap: wrap; }
@@ -187,6 +199,7 @@
 .analytics-table-download { display: inline-flex; align-items: center; gap: .35rem; float: right; margin: -.1rem 0 .4rem; border: 0; background: transparent; color: #0f766e; cursor: pointer; font: inherit; font-size: .76rem; font-weight: 700; }
 @media (max-width: 1180px) { .analytics-chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .analytics-chart-grid { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .molecular-summary-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .analytics-hero .hero-copy h2 { white-space: normal; } }
 @media (max-width: 700px) { .analytics-hero-actions { justify-content: flex-start; } }
 .analytics-table-wrap { overflow-x: auto; }
@@ -2314,6 +2327,10 @@
 
   .analytics-section-filters {
     justify-content: flex-start;
+  }
+
+  .analytics-review-button {
+    align-self: flex-start;
   }
 
   .panel-heading.analytics-chart-heading {

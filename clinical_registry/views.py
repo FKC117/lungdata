@@ -7,7 +7,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.db.models import BooleanField, CharField, Count, Min, OuterRef, Prefetch, Q, Subquery
+from django.db.models import BooleanField, CharField, Count, Max, Min, OuterRef, Prefetch, Q, Subquery
 from django.http import HttpResponse
 from rest_framework import generics, permissions, status
 from rest_framework.pagination import PageNumberPagination
@@ -709,6 +709,8 @@ class AnalyticsFacetAPIView(AnalyticsQueryMixin, APIView):
         "molecular": (MolecularPathology, "status", {"method": "method", "gene": "gene"}),
         "molecular_gene": (MolecularPathology, "gene", {"method": "method", "gene": "gene"}),
         "molecular_method": (MolecularPathology, "method", {"method": "method", "gene": "gene"}),
+        "molecular_specimen": (MolecularPathology, "specimen", {"method": "method", "gene": "gene"}),
+        "molecular_exon": (MolecularPathology, "exon", {"method": "method", "gene": "gene"}),
         "cancer_marker": (CancerMarker, "name", {"unit": "unit"}),
         "cancer_marker_unit": (CancerMarker, "unit", {"unit": "unit"}),
         "treatment": (TreatmentCycle, "current_chemo_protocol", {"line": "line_of_treatment", "modality": "chemotherapy_modalities__detail"}),
@@ -727,6 +729,9 @@ class AnalyticsFacetAPIView(AnalyticsQueryMixin, APIView):
         if not definition:
             return Response({"detail": "Unknown analytics subject."}, status=status.HTTP_400_BAD_REQUEST)
         model, measure, dimensions = definition
+        count_mode = request.query_params.get("count_mode", "records")
+        if count_mode not in {"records", "patients", "observations"}:
+            return Response({"detail": "Unknown count mode."}, status=status.HTTP_400_BAD_REQUEST)
         self.audit(request, f"analytics_facet_{subject}")
         base = model.objects.filter(
             observation__in=self.analysis_observations(request),
@@ -739,13 +744,17 @@ class AnalyticsFacetAPIView(AnalyticsQueryMixin, APIView):
         items = list(
             queryset.exclude(**{measure: ""})
             .values(measure)
-            .annotate(count=Count("id", distinct=True))
+            .annotate(count=Count(
+                {"records": "id", "patients": "observation__patient_id", "observations": "observation_id"}[count_mode],
+                distinct=True,
+            ))
             .order_by("-count", measure)
         )
         return Response({
             "subject": subject,
             "measure": measure,
-            "unit": "clinical records",
+            "count_mode": count_mode,
+            "unit": {"records": "clinical records", "patients": "patients", "observations": "test events"}[count_mode],
             "items": [{"label": item[measure], "count": item["count"]} for item in items],
             "filters": {
                 parameter: list(
@@ -754,6 +763,157 @@ class AnalyticsFacetAPIView(AnalyticsQueryMixin, APIView):
                 for parameter, lookup in dimensions.items()
             },
         })
+
+
+class AnalyticsMolecularSummaryAPIView(AnalyticsQueryMixin, APIView):
+    """Clearly separated patient, test-event, and result-entry measures for molecular data."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        self.audit(request, "analytics_molecular_summary")
+        records = MolecularPathology.objects.filter(observation__in=self.analysis_observations(request))
+        for parameter in ("method", "gene"):
+            value = (request.query_params.get(parameter) or "").strip()
+            if value:
+                records = records.filter(**{parameter: value})
+        return Response({
+            "patients_tested": records.values("observation__patient_id").distinct().count(),
+            "test_events": records.values("observation_id").distinct().count(),
+            "result_entries": records.count(),
+            "methods_recorded": records.exclude(method="").values("method").distinct().count(),
+            "definition": "A test event is one published clinical observation with molecular data. A result entry is one gene-level molecular record; one test event may contain several result entries.",
+        })
+
+
+class AnalyticsMolecularChronologyAPIView(AnalyticsQueryMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        self.audit(request, "analytics_molecular_chronology")
+        count_mode = request.query_params.get("count_mode", "events")
+        if count_mode not in {"patients", "events", "entries"}:
+            return Response({"detail": "Unknown count mode."}, status=status.HTTP_400_BAD_REQUEST)
+        records = MolecularPathology.objects.filter(observation__in=self.analysis_observations(request)).select_related("observation")
+        for parameter in ("method", "gene"):
+            value = (request.query_params.get(parameter) or "").strip()
+            if value:
+                records = records.filter(**{parameter: value})
+
+        buckets = {}
+        for record in records:
+            event_date = record.observed_on or (record.observation.observed_at.date() if record.observation.observed_at else None)
+            if not event_date:
+                continue
+            bucket = event_date.strftime("%Y-%m")
+            buckets.setdefault(bucket, {"entries": 0, "events": set(), "patients": set()})
+            buckets[bucket]["entries"] += 1
+            buckets[bucket]["events"].add(record.observation_id)
+            buckets[bucket]["patients"].add(record.observation.patient_id)
+        return Response({
+            "count_mode": count_mode,
+            "unit": {"patients": "patients", "events": "test events", "entries": "result entries"}[count_mode],
+            "items": [
+                {"label": label, "count": value["entries"] if count_mode == "entries" else len(value[count_mode])}
+                for label, value in sorted(buckets.items())
+            ],
+        })
+
+
+class AnalyticsPatientMatchesAPIView(AnalyticsQueryMixin, APIView):
+    """Patient-level traceability for the active analytics cohort or domain."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        subject = request.query_params.get("subject", "").strip()
+        self.audit(request, f"analytics_patient_matches_{subject or 'cohort'}")
+
+        if subject:
+            definition = AnalyticsFacetAPIView.SUBJECTS.get(subject)
+            if not definition:
+                return Response({"detail": "Unknown analytics subject."}, status=status.HTTP_400_BAD_REQUEST)
+            model, _, dimensions = definition
+            records = model.objects.filter(observation__in=self.analysis_observations(request))
+            for parameter, lookup in dimensions.items():
+                value = (request.query_params.get(parameter) or "").strip()
+                if value:
+                    records = records.filter(**{lookup: value})
+            rows = records.values(
+                "observation__patient_id",
+                "observation__patient__registry_id",
+                "observation__patient__name",
+                "observation__patient__registration_no",
+                "observation__patient__phone",
+                "observation__patient__email",
+                "observation__patient__age",
+                "observation__patient__gender",
+                "observation__patient__district",
+            ).annotate(
+                matching_records=Count("id", distinct=True),
+                latest_observation=Max("observation__observed_at"),
+            ).order_by("observation__patient__registry_id")
+            scope = "Matching domain records across the included patients' published journeys."
+        else:
+            rows = self.matching_observations(request).values(
+                "patient_id",
+                "patient__registry_id",
+                "patient__name",
+                "patient__registration_no",
+                "patient__phone",
+                "patient__email",
+                "patient__age",
+                "patient__gender",
+                "patient__district",
+            ).annotate(
+                matching_records=Count("id", distinct=True),
+                latest_observation=Max("observed_at"),
+            ).order_by("patient__registry_id")
+            scope = "Published clinical observations that match the global cohort filters."
+
+        rows = list(rows)
+        patient_ids = [row.get("observation__patient_id", row.get("patient_id")) for row in rows]
+        clinical_rows = {
+            row["patient"].id: row
+            for row in self.patient_rows(
+                Patient.objects.filter(id__in=patient_ids, deleted_at__isnull=True),
+                self.analysis_observations(request),
+            )
+        }
+        detail_keys = (
+            "diagnosis", "primary_site", "diagnosis_subgroup", "diagnosis_laterality", "stage",
+            "pathological_stage", "pathology", "grade", "metastatic_site", "biomarker",
+            "molecular_status", "molecular_exon", "molecular_method", "molecular_specimen",
+            "cancer_marker", "treatment", "treatment_line", "treatment_modality", "response",
+            "progression_status", "survival_status", "radiotherapy_intent", "radiotherapy_site",
+            "radiotherapy_modality", "surgery_modality", "surgery_laterality", "smoking_status",
+            "comorbidity", "diagnosis_date", "treatment_start", "progression_date", "death_date",
+            "last_follow_up",
+        )
+        items = []
+        for row in rows:
+            patient_id = row.get("observation__patient_id", row.get("patient_id"))
+            prefix = "observation__patient__" if subject else "patient__"
+            clinical = clinical_rows.get(patient_id, {})
+            molecular_methods = "; ".join(sorted({
+                item.method for record in clinical.get("records", [])
+                for item in record.molecular_pathologies.all() if item.method
+            }))
+            items.append({
+                "registry_id": row[f"{prefix}registry_id"],
+                "name": row[f"{prefix}name"],
+                "registration_no": row[f"{prefix}registration_no"],
+                "phone": row[f"{prefix}phone"],
+                "email": row[f"{prefix}email"],
+                "age": row[f"{prefix}age"],
+                "gender": row[f"{prefix}gender"],
+                "district": row[f"{prefix}district"],
+                "matching_records": row["matching_records"],
+                "latest_observation": row["latest_observation"],
+                "molecular_methods": molecular_methods,
+                **{key: clinical.get(key) for key in detail_keys},
+            })
+        return Response({"subject": subject or "cohort", "scope": scope, "count": len(items), "items": items})
 
 
 class AnalyticsSurvivalAPIView(AnalyticsQueryMixin, APIView):
@@ -784,16 +944,16 @@ class AnalyticsExportAPIView(AnalyticsQueryMixin, APIView):
         response["Content-Disposition"] = 'attachment; filename="analytics_cohort_export.csv"'
         writer = csv.writer(response)
         writer.writerow([
-            "Registry ID", "Diagnosis", "Primary site", "Stage", "Pathological stage", "Pathology", "Grade",
-            "Metastatic site", "Biomarker", "Molecular status", "IHC marker", "Treatment", "Treatment line",
+            "Registry ID", "Patient", "Registration no.", "Age", "Gender", "District", "Diagnosis", "Primary site", "Stage", "Pathological stage", "Pathology", "Grade",
+            "Metastatic site", "Biomarker", "Molecular method (latest)", "Molecular methods (all)", "Molecular status", "Molecular exon", "Molecular specimen", "IHC marker", "Treatment", "Treatment line",
             "Treatment modality", "Radiotherapy intent", "Radiotherapy site", "Radiotherapy modality",
             "Surgery modality", "Smoking status", "Comorbidity", "Response", "Progression status",
             "Survival status", "Diagnosis date", "Treatment start", "Progression date", "Death date", "Last follow-up",
         ])
         for row in rows:
             writer.writerow([
-                row["patient"].registry_id, row["diagnosis"], row["primary_site"], row["stage"], row["pathological_stage"], row["pathology"], row["grade"],
-                row["metastatic_site"], row["biomarker"], row["molecular_status"], row["ihc_marker"], row["treatment"], row["treatment_line"],
+                row["patient"].registry_id, row["patient"].name, row["patient"].registration_no, row["patient"].age, row["patient"].gender, row["patient"].district, row["diagnosis"], row["primary_site"], row["stage"], row["pathological_stage"], row["pathology"], row["grade"],
+                row["metastatic_site"], row["biomarker"], row["molecular_method"], "; ".join(sorted({item.method for record in row["records"] for item in record.molecular_pathologies.all() if item.method})), row["molecular_status"], row["molecular_exon"], row["molecular_specimen"], row["ihc_marker"], row["treatment"], row["treatment_line"],
                 row["treatment_modality"], row["radiotherapy_intent"], row["radiotherapy_site"], row["radiotherapy_modality"],
                 row["surgery_modality"], row["smoking_status"], row["comorbidity"], row["response"], row["progression_status"],
                 row["survival_status"], row["diagnosis_date"], row["treatment_start"], row["progression_date"], row["death_date"], row["last_follow_up"],
